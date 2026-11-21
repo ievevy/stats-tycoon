@@ -1,5 +1,5 @@
 // sw.js — a tiny offline cache so the game works after "Add to Home Screen".
-const CACHE = "stats-tycoon-v10";
+const CACHE = "stats-tycoon-v11";
 const ASSETS = [
   "./",
   "./index.html",

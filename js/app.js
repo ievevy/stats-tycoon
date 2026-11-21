@@ -219,6 +219,53 @@ function radioGroup(name, options, chosen) {
 
 // ---------- screens ----------
 
+// The buildable research campus: one plot per career chapter, built when passed.
+function renderSite() {
+  const ids = ["foundations", "intern", "ra", "phd", "pi"];
+  const builtCount = ids.filter((id) => progress.passed[id]).length;
+  const baseY = 150;
+  const B = [
+    { id: "foundations", x: 12, w: 50, h: 40, c: "#8a94ff", r: "#5b67e0", s: "🧭" },
+    { id: "intern", x: 70, w: 56, h: 50, c: "#67c23a", r: "#4a9e26", s: "🧫" },
+    { id: "ra", x: 134, w: 60, h: 64, c: "#f4a62a", r: "#d4871a", s: "🔬" },
+    { id: "phd", x: 202, w: 54, h: 88, c: "#9b7cff", r: "#7658e0", s: "🎓" },
+    { id: "pi", x: 264, w: 80, h: 66, c: "#ff7aa2", r: "#e05b86", s: "🏆" },
+  ];
+  const bld = (b) => {
+    const y = baseY - b.h;
+    if (!progress.passed[b.id]) {
+      return `<g opacity="0.5"><rect x="${b.x}" y="${y}" width="${b.w}" height="${b.h}" rx="5" fill="none" stroke="#9aa0b8" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${b.x + b.w / 2}" y="${y + b.h / 2 + 8}" text-anchor="middle" font-size="20">🚧</text></g>`;
+    }
+    return `<g>
+      <polygon points="${b.x - 3},${y} ${b.x + b.w / 2},${y - 16} ${b.x + b.w + 3},${y}" fill="${b.r}"/>
+      <rect x="${b.x}" y="${y}" width="${b.w}" height="${b.h}" rx="4" fill="${b.c}"/>
+      <rect x="${b.x + b.w / 2 - 7}" y="${baseY - 18}" width="14" height="18" rx="2" fill="${b.r}"/>
+      <rect x="${b.x + 8}" y="${y + 12}" width="11" height="11" rx="2" fill="#fff4c2"/>
+      <rect x="${b.x + b.w - 19}" y="${y + 12}" width="11" height="11" rx="2" fill="#fff4c2"/>
+      <text x="${b.x + b.w / 2}" y="${y - 21}" text-anchor="middle" font-size="16">${b.s}</text>
+    </g>`;
+  };
+  const known = [...ITEMS, ...seasonalNow()];
+  const props = collection().unlocked.map((id) => { const it = known.find((x) => x.id === id); return it ? it.e : null; }).filter(Boolean).slice(0, 5);
+  const propXs = [28, 62, 298, 330, 150];
+  const propsSvg = props.map((e, i) => `<text x="${propXs[i]}" y="199" text-anchor="middle" font-size="15">${e}</text>`).join("");
+  return `
+    <div class="site">
+      <svg viewBox="0 0 360 210" class="site-svg" role="img" aria-label="your research campus grows as you progress">
+        <circle cx="328" cy="30" r="15" fill="#ffd34d"/>
+        <ellipse cx="70" cy="34" rx="26" ry="10" fill="#ffffff" opacity="0.8"/>
+        <ellipse cx="150" cy="22" rx="20" ry="8" fill="#ffffff" opacity="0.7"/>
+        <rect x="0" y="150" width="360" height="60" fill="#93d268"/>
+        <rect x="0" y="150" width="360" height="4" fill="#7cc04f"/>
+        <rect x="0" y="180" width="360" height="18" fill="#ead9b0"/>
+        ${B.map(bld).join("")}
+        ${propsSvg}
+        <text x="180" y="196" text-anchor="middle" font-size="24">${avatarEmoji()}</text>
+      </svg>
+      <div class="site-stat">🏗️ ${builtCount}/5 built · 🧠 ${masteredCount()}/${totalSkills()} skills mastered</div>
+    </div>`;
+}
+
 function screenMap() {
   const nodes = levels
     .map((lvl, i) => {
@@ -247,6 +294,7 @@ function screenMap() {
     .join('<div class="node-link"></div>');
 
   return `
+    ${renderSite()}
     <section class="card center">
       <div class="mascot-stage">${mascot("happy", "bob")}</div>
       <h1>Your career</h1>
