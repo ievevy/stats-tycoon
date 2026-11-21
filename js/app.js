@@ -15,6 +15,7 @@ import {
   recordStudy, syncProgress, newCount, markSeen, totalItems,
 } from "./collection.js";
 import { LESSONS } from "./lessons.js";
+import { SKILLS, pKnown, update as trackSkill, allSkills, masteredCount, totalSkills } from "./skills.js";
 
 // ---------- helpers ----------
 
@@ -330,7 +331,12 @@ function wireQuiz(quiz, key) {
     if (nx) nx.disabled = false;
   };
   if (state.answered[key] !== undefined) show(state.answered[key]);
-  else opts.forEach((b) => (b.onclick = () => { const idx = +b.dataset.idx; state.answered[key] = idx; show(idx); }));
+  else opts.forEach((b) => (b.onclick = () => {
+    const idx = +b.dataset.idx;
+    state.answered[key] = idx;
+    if (quiz.skill) trackSkill(quiz.skill, !!quiz.options[idx].ok);
+    show(idx);
+  }));
 }
 
 function wireDemo(kind, key) {
@@ -471,9 +477,22 @@ function screenBudget() {
     </section>`;
 }
 
+function renderHints(sc, hl) {
+  const shown = (sc.hints || []).slice(0, hl);
+  return `
+    <div class="hints">
+      <div class="hint-head">${mascot("think", "xs")}<span>Lab assistant</span></div>
+      ${shown.map((h) => `<p class="hint-line">💡 ${h}</p>`).join("")}
+      ${hl < (sc.hints || []).length ? `<button class="hint-btn" id="hintMore">Another hint →</button>` : ""}
+    </div>`;
+}
+
 function screenMethod() {
   const methods = Object.keys(METHOD_LABELS);
   const chosen = state.choice.method;
+  const sc = current();
+  const hl = state.choice.hintLevel || 0;
+  const stuck = pKnown(sc.skill) < 0.4;
   return hud() + `
     <section class="card">
       <span class="tag">Run</span>
@@ -482,6 +501,7 @@ function screenMethod() {
       <div class="methods">
         ${methods.map((m) => `<button class="method ${chosen === m ? "sel" : ""}" data-m="${m}">${METHOD_LABELS[m]}</button>`).join("")}
       </div>
+      <div class="hintbox">${hl > 0 ? renderHints(sc, hl) : `<button class="hint-btn" id="hintBtn">🧪 ${stuck ? "Stuck? Ask the lab assistant" : "Need a hint?"}</button>`}</div>
       <button class="primary" id="runStudy" ${chosen ? "" : "disabled"}>Run the study →</button>
     </section>`;
 }
@@ -521,7 +541,8 @@ function grade() {
   state.budget = state.budget - cost + grant;
   state.scores.push(score);
   const unlocks = recordStudy(correctMethod, score);
-  state.result = { sc, res, data, power, powered, correctMethod, correctClassify, sig, verdict, tone, score, grant, cost, n, unlocks };
+  const mastery = trackSkill(sc.skill, correctMethod, { hinted: !!state.choice.hinted });
+  state.result = { sc, res, data, power, powered, correctMethod, correctClassify, sig, verdict, tone, score, grant, cost, n, unlocks, skill: sc.skill, mastery, hinted: !!state.choice.hinted };
 }
 
 function screenDebrief() {
@@ -542,9 +563,10 @@ function screenDebrief() {
       <p class="verdict">${r.verdict}</p>
       <p class="teach">${sc.teach}</p>
       <div class="scoreline">
-        <span>n=${r.n} · power ${Math.round(r.power * 100)}%</span>
+        <span>n=${r.n} · power ${Math.round(r.power * 100)}%${r.hinted ? " · hint used" : ""}</span>
         <span class="study-score">+${r.score} score</span>
       </div>
+      ${r.mastery ? `<p class="mastery-line">${SKILLS[r.skill]}: ${Math.round(r.mastery.prior * 100)}% → <strong>${Math.round(r.mastery.post * 100)}%</strong> mastery${r.mastery.masteredNow ? ' <span class="fb-good">🎉 mastered!</span>' : ""}</p>` : ""}
       ${unlockBanner(r.unlocks)}
       <button class="primary" id="next">${state.studyIndex + 1 < state.order.length ? "Next study →" : "Finish chapter →"}</button>
     </section>`;
@@ -657,6 +679,13 @@ function screenLab() {
       </div>
       <p class="qlabel">Choose your avatar</p>
       <div class="avatars">${avatars}</div>
+      <p class="qlabel">Skill mastery — ${masteredCount()}/${totalSkills()}</p>
+      <div class="skills">
+        ${allSkills().map((s) => {
+          const pct = Math.round(s.p * 100);
+          return `<div class="skill-row"><div class="skill-top"><span>${s.name}</span><span class="${s.mastered ? "fb-good" : ""}">${s.started ? pct + "%" : "—"}</span></div><div class="bar"><div class="fill ${s.mastered ? "good" : "warn"}" style="width:${s.started ? pct : 0}%"></div></div></div>`;
+        }).join("")}
+      </div>
       <p class="qlabel">Collection — ${earned}/${totalItems()}</p>
       <div class="collection">${grid}</div>
       ${seasonHtml}
@@ -779,6 +808,10 @@ function wire() {
     app().querySelectorAll(".method").forEach((btn) => {
       btn.onclick = () => { state.choice.method = btn.dataset.m; render(); };
     });
+    const hb = $("#hintBtn");
+    if (hb) hb.onclick = () => { state.choice.hintLevel = 1; state.choice.hinted = true; render(); };
+    const hm = $("#hintMore");
+    if (hm) hm.onclick = () => { state.choice.hintLevel = (state.choice.hintLevel || 1) + 1; render(); };
     const run = $("#runStudy");
     if (run) run.onclick = () => doRun();
   }

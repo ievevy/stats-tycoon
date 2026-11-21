@@ -51,6 +51,7 @@ const FOUNDATIONS = [
       <p>Below, two groups are drawn from the <em>same</em> population — so there's <strong>no real effect</strong>. Run it a bunch and watch how often you still get a "significant" p &lt; 0.05 by pure luck.</p>`,
     demo: "pvalue",
     quiz: {
+      skill: "pvalue",
       q: "A study reports p = 0.03. What does that mean?",
       options: [
         { t: "If there were no real effect, data this extreme would happen ~3% of the time", ok: true, why: "Exactly — it's computed assuming the null is true." },
@@ -65,6 +66,7 @@ const FOUNDATIONS = [
       <p>The p-value asks <em>"is it real?"</em>. The <strong>effect size</strong> asks <em>"does it matter?"</em> Drag the slider to see how <strong>Cohen's d</strong> separates two groups — roughly 0.2 small, 0.5 medium, 0.8 large.</p>`,
     demo: "effect",
     quiz: {
+      skill: "effect-size",
       q: "A huge study finds p < 0.001 but Cohen's d = 0.04. Best read?",
       options: [
         { t: "A real but tiny effect — probably not worth acting on", ok: true, why: "A large sample makes even a trivial effect 'significant'. d = 0.04 is tiny." },
@@ -79,6 +81,7 @@ const FOUNDATIONS = [
     body: `
       <p>Put the two ideas on a grid. The sweet spot is <strong>significant <em>and</em> a meaningful effect</strong> — top right. The link between effect size, sample size and detection is exactly the <strong>budget step</strong> you'll play.</p>`,
     quiz: {
+      skill: "significance",
       q: "Your result is NOT significant, but the observed effect looks large. Most likely?",
       options: [
         { t: "Underpowered — the sample was too small", ok: true, why: "A big effect that misses significance usually means too few observations." },
@@ -101,6 +104,7 @@ const FOUNDATIONS = [
       </table>
       <p>Aim for κ &gt; 0.70, and watch the <strong>kappa paradox</strong> when one category dominates.</p>`,
     quiz: {
+      skill: "irr",
       q: "Three reviewers each sort papers into categories. Which coefficient?",
       options: [
         { t: "Fleiss' κ", ok: true, why: "3+ raters on categories → Fleiss' κ." },
@@ -120,6 +124,7 @@ export const LESSONS = {
       body: `
         <p>Before any test, name the <strong>outcome type</strong> and the <strong>design</strong>. For a number (continuous) across <strong>two groups</strong>, you're in t-test territory: <strong>paired</strong> if the same units are measured twice, <strong>independent</strong> if the groups are different units.</p>`,
       quiz: {
+        skill: "paired-ttest",
         q: "You measure the SAME patients before and after a drug. Which test?",
         options: [
           { t: "Paired t-test", ok: true, why: "Same units measured twice → paired." },
@@ -136,6 +141,7 @@ export const LESSONS = {
       body: `
         <p>Two moves beyond the t-test: <strong>three or more groups</strong> → one-way <strong>ANOVA</strong> (not a pile of t-tests), and <strong>a continuous predictor</strong> → <strong>linear regression</strong>, which estimates the slope.</p>`,
       quiz: {
+        skill: "anova",
         q: "You compare mean crop yield across 4 fertilizers. Which test?",
         options: [
           { t: "One-way ANOVA", ok: true, why: "3+ groups → ANOVA; separate t-tests would inflate false positives." },
@@ -152,6 +158,7 @@ export const LESSONS = {
       body: `
         <p>Yes/no and category outcomes don't fit a t-test. <strong>Association between two categories</strong> → <strong>chi-square</strong>. <strong>Predict a binary outcome from a predictor</strong> → <strong>logistic regression</strong> (keeps predictions between 0 and 1).</p>`,
       quiz: {
+        skill: "logistic",
         q: "Predict whether a patient relapses (yes/no) from their age (a number). Which method?",
         options: [
           { t: "Logistic regression", ok: true, why: "Binary outcome + a predictor → logistic." },
@@ -168,6 +175,7 @@ export const LESSONS = {
       body: `
         <p>One rule drives everything: <strong>outcome type + design → method.</strong> Continuous → t-test / ANOVA / regression. Categorical → chi-square / logistic. No warm-up from here.</p>`,
       quiz: {
+        skill: "linear",
         q: "Continuous outcome, predicted from one continuous predictor. Which method?",
         options: [
           { t: "Linear regression", ok: true, why: "Continuous outcome + continuous predictor → linear regression." },

@@ -15,6 +15,11 @@ import { sampleNormal, bernoulli } from "./stats.js";
 export const scenarios = [
   {
     id: "tutoring",
+    skill: "paired-ttest",
+    hints: [
+      "What's the outcome type, and are the SAME people measured more than once?",
+      "Same units measured twice (before/after) → it's paired. Use the paired version of the t-test.",
+    ],
     title: "The tutoring app",
     prompt:
       "Does a new tutoring app raise test scores? You measure the SAME students before and after using it for a term.",
@@ -38,6 +43,11 @@ export const scenarios = [
   },
   {
     id: "two-methods",
+    skill: "independent-ttest",
+    hints: [
+      "Are the two groups the same people, or different people?",
+      "Different classes = different people → two independent groups of a continuous score → two-sample t-test.",
+    ],
     title: "Two teaching methods",
     prompt:
       "Two DIFFERENT classes are each taught with a different method. Do their final exam scores differ?",
@@ -60,6 +70,11 @@ export const scenarios = [
   },
   {
     id: "fertilizer",
+    skill: "anova",
+    hints: [
+      "How many groups are you comparing at once?",
+      "Three or more groups → one omnibus test, not a pile of t-tests. That's one-way ANOVA.",
+    ],
     title: "Three fertilizers",
     prompt:
       "You test THREE fertilizers on crop yield, one per plot. Do the fertilizers differ in average yield?",
@@ -83,6 +98,11 @@ export const scenarios = [
   },
   {
     id: "study-hours",
+    skill: "linear",
+    hints: [
+      "Is the predictor a set of groups, or a continuous number?",
+      "A continuous predictor against a continuous outcome → linear regression (it estimates the slope).",
+    ],
     title: "Study hours vs score",
     prompt:
       "Does the NUMBER of hours studied predict exam score? Both are measured on a continuous scale.",
@@ -105,6 +125,11 @@ export const scenarios = [
   },
   {
     id: "treatment",
+    skill: "chi-square",
+    hints: [
+      "Is 'recovered?' a number, or a category (yes/no)?",
+      "Two categories crossed (group × yes/no) → chi-square test of independence.",
+    ],
     title: "Treatment vs control",
     prompt:
       "Patients get a treatment or a placebo. Each either RECOVERS or does not. Is recovery associated with the treatment?",
@@ -131,6 +156,11 @@ export const scenarios = [
   },
   {
     id: "dose",
+    skill: "logistic",
+    hints: [
+      "The outcome is yes/no; the predictor (dose) is a continuous number.",
+      "Binary outcome predicted from a continuous predictor → logistic regression (keeps probabilities in 0–1).",
+    ],
     title: "Dose vs side-effect",
     prompt:
       "Does a continuous DOSE predict whether a patient gets a side-effect (yes/no)?",
