@@ -9,7 +9,7 @@ import {
 import { scenarios, METHOD_LABELS } from "./scenarios.js";
 import { renderChart, mascot, confetti } from "./graphics.js";
 import { levels, lockedRanks, scoreStudy, starsFor, PASS_MARK } from "./levels.js";
-import { energy, spend, grantForLesson, msToNext, msToFull, fmtClock, energyPips, MAX_ENERGY } from "./energy.js";
+import { energy, spend, grantForLesson, award, msToNext, msToFull, fmtClock, energyPips, MAX_ENERGY } from "./energy.js";
 import {
   AVATARS, ITEMS, seasonalNow, collection, setAvatar, avatarEmoji,
   recordStudy, syncProgress, newCount, markSeen, totalItems,
@@ -18,6 +18,7 @@ import { LESSONS } from "./lessons.js";
 import { SKILLS, pKnown, update as trackSkill, allSkills, masteredCount, totalSkills } from "./skills.js";
 import { touchStreak, recordActivity as recordStreakActivity, streakCount, freezeCount } from "./streak.js";
 import { QUESTIONS } from "./questions.js";
+import { PROJECTS } from "./pipeline.js";
 
 // ---------- helpers ----------
 
@@ -329,6 +330,99 @@ function screenQBuilder() {
     </section>`;
 }
 
+// ----- full research-project pipeline -----
+const PIPE_STEPS = ["Question", "Hypotheses", "Power", "Method", "Run", "Conclusion"];
+const curProj = () => PROJECTS[state.pp.i];
+function startPipeline() {
+  const p = PROJECTS[0];
+  state.pp = { i: 0, stage: "build", placed: [], bank: shuffle([...p.tiles, ...p.distractors]), n: 30, method: null };
+  state.step = "pipeline";
+  render();
+}
+function pipeStepper(active) {
+  return `<div class="stepper">${PIPE_STEPS.map((s, i) => `<span class="pstep ${i === active ? "on" : i < active ? "done" : ""}">${i < active ? "✓" : i + 1}</span>`).join("")}</div>`;
+}
+
+function screenPipeline() {
+  const p = curProj();
+  const st = state.pp.stage;
+  const idx = { build: 0, hyp: 1, power: 2, method: 3, run: 4, conclude: 5, done: 5 }[st];
+  let body = "";
+
+  if (st === "build") {
+    const { placed, bank } = state.pp;
+    body = `
+      <div class="brief-head">${mascot("think", "sm")}<h2>Build the question</h2></div>
+      <p class="prompt">🎯 ${p.goal}</p>
+      <div class="qb-answer">${placed.length ? placed.map((t, k) => `<button class="qtile placed" data-i="${k}">${t}</button>`).join("") : '<span class="qb-empty">tap the words below…</span>'}</div>
+      <div class="qb-bank">${bank.map((t, k) => `<button class="qtile" data-b="${k}">${t}</button>`).join("")}</div>
+      <button class="primary" id="ppCheck" ${placed.length ? "" : "disabled"}>Check →</button>`;
+  } else if (st === "hyp") {
+    body = `
+      <h2>Your hypotheses</h2>
+      <div class="qb-result"><p><strong>H₀:</strong> ${p.h0}</p><p><strong>H₁:</strong> ${p.h1}</p><p><strong>Design:</strong> ${p.designLabel} · <strong>outcome:</strong> ${p.outcome}</p></div>
+      <button class="primary" id="ppNext">Plan the sample →</button>`;
+  } else if (st === "power") {
+    const power = approxPower(p.effect, state.pp.n, p.powerModel);
+    const pct = Math.round(power * 100);
+    const cls = power >= 0.8 ? "good" : power >= 0.5 ? "warn" : "bad";
+    body = `
+      <h2>How big a sample?</h2>
+      <p class="hint">You need enough participants to detect the effect if it's real. Aim for power ≥ 80%.</p>
+      <div class="slider-wrap"><input type="range" id="ppSlider" min="5" max="120" step="5" value="${state.pp.n}"/>
+        <div class="slider-row"><span>Sample size per group</span><span class="big" id="ppN">${state.pp.n}</span></div></div>
+      <div class="meter"><div class="meter-label"><span>Approx. power</span><span class="${cls}" id="ppPowV">${pct}%</span></div>
+        <div class="bar"><div class="fill ${cls}" id="ppPowBar" style="width:${pct}%"></div></div></div>
+      <button class="primary" id="ppNext">Choose a method →</button>`;
+  } else if (st === "method") {
+    const chosen = state.pp.method;
+    body = `
+      <h2>Which method?</h2>
+      <p class="hint">Pick the test this design calls for.</p>
+      <div class="methods">${Object.keys(METHOD_LABELS).map((m) => `<button class="method ${chosen === m ? "sel" : ""}" data-m="${m}">${METHOD_LABELS[m]}</button>`).join("")}</div>
+      <button class="primary" id="ppRun" ${chosen ? "" : "disabled"}>Run the study →</button>`;
+  } else if (st === "run") {
+    const r = state.pp.res;
+    body = `
+      <h2>Results</h2>
+      <div class="chartbox">${renderChart(state.pp.data)}</div>
+      <p class="line">You ran: <strong>${METHOD_LABELS[state.pp.method]}</strong> ${state.pp.correctMethod ? '<span class="chip good">right method</span>' : '<span class="chip bad">wrong method</span>'}</p>
+      <p class="result">${r.ran ? `Result: <strong>${r.summary}</strong>, p = <strong>${fmtP(r.p)}</strong> ${state.pp.sig ? "(significant)" : "(not significant)"}.` : `<span class="bad-text">${r.note}</span>`}</p>
+      <p class="truth"><strong>The truth:</strong> ${p.truth}</p>
+      <button class="primary" id="ppNext">Draw your conclusion →</button>`;
+  } else if (st === "conclude") {
+    const opts = state.pp.sig ? p.sigConclusions : p.nsConclusions;
+    if (state.pp.concluded) {
+      const correct = opts.find((o) => o.ok);
+      body = `
+        <h2>What can you conclude?</h2>
+        <div class="quiz"><p class="qb-ok"><span class="fb-good">✓ Honest conclusion</span></p><p>"${correct.t}"</p><p class="qb-next">${correct.why}</p></div>
+        <div class="caveats"><div class="cav-head">⚠️ Limits of this finding — always state these</div><ul>${p.caveats.map((c) => `<li>${c}</li>`).join("")}</ul></div>
+        <button class="primary" id="ppFinish">Finish the study →</button>`;
+    } else {
+      body = `
+        <h2>What can you conclude?</h2>
+        <p class="hint">Your result was <strong>${state.pp.sig ? "significant" : "not significant"}</strong>. Pick the honest conclusion — don't over-reach.</p>
+        <div class="quiz"><div class="quiz-opts">${opts.map((o, k) => `<button class="quiz-opt" data-c="${k}">${o.t}</button>`).join("")}</div><div class="quiz-fb" id="ppFb"></div></div>`;
+    }
+  } else if (st === "done") {
+    body = `
+      <div class="mascot-stage">${mascot("happy", "bob")}</div>
+      <h1>Study complete! 🎓</h1>
+      <p class="hint">You took a research question all the way from idea to an honest conclusion — the whole pipeline.</p>
+      <div class="qb-result"><p><strong>Question:</strong> ${p.tiles.join(" ")}</p><p><strong>Method:</strong> ${METHOD_LABELS[p.method]}</p><p><strong>Outcome:</strong> ${state.pp.sig ? "significant result" : "not significant"} · conclusion drawn correctly</p></div>
+      <button class="primary" id="ppDone">Back to map →</button>`;
+  }
+
+  return `
+    <section class="card${st === "done" ? " center" : ""}">
+      <span class="tag">Full study</span>
+      ${st === "done" ? "" : pipeStepper(idx)}
+      ${body}
+      ${st === "done" ? "" : '<button class="ghost" id="ppMap">← Career map</button>'}
+    </section>`;
+}
+
 function screenMap() {
   const nodes = levels
     .map((lvl, i) => {
@@ -373,6 +467,7 @@ function screenMap() {
         ${newCount() ? '<span class="new-badge">NEW</span>' : ""}
       </button>
       <button class="lab-btn" id="openQB">🧩 Build a Research Question</button>
+      <button class="lab-btn" id="openPipe">🔬 Run a Full Study</button>
       <p class="hint">Climb the research ladder. <strong>Lessons give you ⚡ energy; each study you run costs ⚡1.</strong> Tap a glowing rank to play it.</p>
     </section>
     <div class="map">
@@ -869,6 +964,7 @@ function render() {
     map: screenMap, story: screenStory, brief: screenBrief, classify: screenClassify,
     budget: screenBudget, method: screenMethod, debrief: screenDebrief, levelend: screenLevelEnd,
     energyout: screenEnergyOut, lab: screenLab, lesson: screenLesson, qbuilder: screenQBuilder,
+    pipeline: screenPipeline,
   };
   app().innerHTML = screens[state.step]();
   wire();
@@ -886,6 +982,69 @@ function wire() {
     if (lab) lab.onclick = () => { state.step = "lab"; render(); };
     const qb = $("#openQB");
     if (qb) qb.onclick = () => startQBuilder();
+    const pipe = $("#openPipe");
+    if (pipe) pipe.onclick = () => startPipeline();
+  }
+
+  if (step === "pipeline") {
+    const p = curProj();
+    const st = state.pp.stage;
+    if (st === "build") {
+      app().querySelectorAll(".qtile.placed").forEach((btn) => { btn.onclick = () => { state.pp.bank.push(state.pp.placed.splice(+btn.dataset.i, 1)[0]); render(); }; });
+      app().querySelectorAll(".qb-bank .qtile").forEach((btn) => { btn.onclick = () => { state.pp.placed.push(state.pp.bank.splice(+btn.dataset.b, 1)[0]); render(); }; });
+      const chk = $("#ppCheck");
+      if (chk) chk.onclick = () => {
+        if (arrEq(state.pp.placed, p.tiles)) { state.pp.stage = "hyp"; render(); }
+        else flashMsg("Not quite — reorder or swap words", "freeze");
+      };
+    }
+    if (st === "hyp") $("#ppNext").onclick = () => { state.pp.stage = "power"; render(); };
+    if (st === "power") {
+      const slider = $("#ppSlider");
+      slider.oninput = () => {
+        const n = +slider.value; state.pp.n = n;
+        const pw = approxPower(p.effect, n, p.powerModel); const pct = Math.round(pw * 100);
+        const cls = pw >= 0.8 ? "good" : pw >= 0.5 ? "warn" : "bad";
+        $("#ppN").textContent = n;
+        const v = $("#ppPowV"); v.textContent = pct + "%"; v.className = cls;
+        const b = $("#ppPowBar"); b.style.width = pct + "%"; b.className = "fill " + cls;
+      };
+      $("#ppNext").onclick = () => { state.pp.stage = "method"; render(); };
+    }
+    if (st === "method") {
+      app().querySelectorAll(".method").forEach((btn) => { btn.onclick = () => { state.pp.method = btn.dataset.m; render(); }; });
+      const run = $("#ppRun");
+      if (run) run.onclick = () => {
+        const data = p.simulate(state.pp.n);
+        const res = runMethod(state.pp.method, data);
+        const sig = res.ran && res.p < 0.05;
+        const correctMethod = state.pp.method === p.method;
+        Object.assign(state.pp, { data, res, sig, correctMethod, stage: "run" });
+        trackSkill(p.skill, correctMethod);
+        render();
+      };
+    }
+    if (st === "run") $("#ppNext").onclick = () => { state.pp.stage = "conclude"; render(); };
+    if (st === "conclude" && !state.pp.concluded) {
+      const opts = state.pp.sig ? p.sigConclusions : p.nsConclusions;
+      app().querySelectorAll(".quiz-opt").forEach((btn) => {
+        btn.onclick = () => {
+          const o = opts[+btn.dataset.c];
+          if (o.ok) { state.pp.concluded = true; render(); }
+          else { btn.disabled = true; btn.classList.add("wrong"); $("#ppFb").innerHTML = `<span class="fb-bad">✗ Over-reach</span> ${o.why}`; }
+        };
+      });
+    }
+    if (st === "conclude" && state.pp.concluded) {
+      $("#ppFinish").onclick = () => {
+        recordStreakActivity();
+        const got = award(3);
+        state.pp.stage = "done"; render(); confetti(); flashEnergy(got);
+      };
+    }
+    if (st === "done") $("#ppDone").onclick = () => { state.step = "map"; render(); };
+    const map = $("#ppMap");
+    if (map) map.onclick = () => { state.step = "map"; render(); };
   }
 
   if (step === "qbuilder") {

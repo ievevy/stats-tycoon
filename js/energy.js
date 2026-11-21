@@ -78,6 +78,14 @@ export function grantForLesson(key) {
   return { amount: 0, first: false };
 }
 
+// Award energy for a big activity (e.g., finishing a full study). Banks above MAX.
+export function award(n) {
+  refresh();
+  cache.energy += n;
+  write();
+  return n;
+}
+
 export function msToNext() {
   refresh();
   if (cache.energy >= MAX_ENERGY) return 0;
