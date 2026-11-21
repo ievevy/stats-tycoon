@@ -9,7 +9,7 @@ import {
 import { scenarios, METHOD_LABELS } from "./scenarios.js";
 import { renderChart, mascot, confetti } from "./graphics.js";
 import { levels, lockedRanks, scoreStudy, starsFor, PASS_MARK } from "./levels.js";
-import { energy, spend, msToNext, msToFull, fmtClock, energyPips, MAX_ENERGY } from "./energy.js";
+import { energy, spend, grantForLesson, msToNext, msToFull, fmtClock, energyPips, MAX_ENERGY } from "./energy.js";
 import {
   AVATARS, ITEMS, seasonalNow, collection, setAvatar, avatarEmoji,
   recordStudy, syncProgress, newCount, markSeen, totalItems,
@@ -257,7 +257,7 @@ function screenMap() {
         <span class="lab-count">${collection().unlocked.filter((id) => ITEMS.some((i) => i.id === id)).length}/${totalItems()}</span>
         ${newCount() ? '<span class="new-badge">NEW</span>' : ""}
       </button>
-      <p class="hint">Climb the research ladder. Pass a rank to unlock the next. Tap a glowing rank to play it. Each study you run costs ⚡1.</p>
+      <p class="hint">Climb the research ladder. <strong>Lessons give you ⚡ energy; each study you run costs ⚡1.</strong> Tap a glowing rank to play it.</p>
     </section>
     <div class="map">
       ${nodes}
@@ -693,6 +693,16 @@ function screenLab() {
     </section>`;
 }
 
+// A brief floating "+N ⚡" toast for energy earned from a lesson.
+function flashEnergy(amount) {
+  if (!amount) return;
+  const el = document.createElement("div");
+  el.className = "energy-flash";
+  el.textContent = `+${amount} ⚡`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1400);
+}
+
 // Try to run the current study, spending one energy. Blocked → out-of-energy screen.
 function doRun() {
   if (spend(1)) { grade(); state.step = "debrief"; render(); }
@@ -708,14 +718,16 @@ function screenEnergyOut() {
       <h1>${ready ? "Energy restored!" : "Out of lab energy"}</h1>
       <div class="epill big-epill">${energyPips()}</div>
       ${ready
-        ? `<p class="hint">Your lab has energy again. Pick up right where you left off.</p>`
-        : `<p class="hint">The lab needs to recharge. Energy refills on its own — come back soon to keep climbing.</p>
+        ? `<p class="hint">Your lab has energy again. Pick up right where you left off.</p>
+           <button class="primary" id="resume">Run the study →</button>
+           <button class="ghost" id="eout-learn">📖 Learn a lesson to recharge</button>`
+        : `<p class="hint">Recharge by learning: a new lesson gives +3 ⚡, and re-reading one tops you up. (It also trickles back slowly on its own.)</p>
+           <button class="primary" id="eout-learn">📖 Learn a lesson to recharge →</button>
            <div class="timer">
-             <div><span class="timer-label">Next ⚡ in</span><span class="timer-val" id="energy-next">${fmtClock(msToNext())}</span></div>
+             <div><span class="timer-label">Or next ⚡ in</span><span class="timer-val" id="energy-next">${fmtClock(msToNext())}</span></div>
              <div><span class="timer-label">Full in</span><span class="timer-val" id="energy-full">${fmtClock(msToFull())}</span></div>
-           </div>`}
-      ${ready ? '<button class="primary" id="resume">Run the study →</button>' : ""}
-      <button class="ghost" id="eout-map">← Career map</button>
+           </div>
+           <button class="ghost" id="eout-map">← Career map</button>`}
     </section>`;
 }
 
@@ -766,9 +778,11 @@ function wire() {
       else { state.step = "story"; render(); }
     };
     $("#lessonNext").onclick = () => {
+      const got = grantForLesson(key); // lessons pay energy (first time banks, reviews top up)
       if (state.lessonIndex < lessons.length - 1) { state.lessonIndex++; render(); }
       else if (lvl.isFoundation) finishFoundation();
       else { state.choice = {}; state.studyIndex = 0; state.step = "brief"; render(); }
+      flashEnergy(got.amount);
     };
     if (lesson.demo) wireDemo(lesson.demo, key);
     if (lesson.quiz) wireQuiz(lesson.quiz, key);
@@ -819,7 +833,10 @@ function wire() {
   if (step === "energyout") {
     const resume = $("#resume");
     if (resume) resume.onclick = () => doRun();
-    $("#eout-map").onclick = () => { state.step = "map"; render(); };
+    const learn = $("#eout-learn");
+    if (learn) learn.onclick = () => { state.step = "map"; render(); };
+    const emap = $("#eout-map");
+    if (emap) emap.onclick = () => { state.step = "map"; render(); };
   }
 
   if (step === "debrief") {

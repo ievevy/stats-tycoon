@@ -3,8 +3,10 @@
 // the app is closed — that's the come-back-later hook.
 
 const EKEY = "statsTycoonEnergy";
-export const MAX_ENERGY = 5;
-export const REGEN_MS = 2 * 60 * 1000; // one energy every 2 minutes
+export const MAX_ENERGY = 5;          // the timer tops you up to here
+export const REGEN_MS = 2 * 60 * 1000; // slow safety-net: one energy every 2 minutes
+const FIRST_ENERGY = 3;                // a brand-new lesson pays this (can bank above MAX)
+const REVIEW_ENERGY = 1;              // re-reading a lesson tops up, but only to MAX
 
 const now = () => Date.now();
 let cache = null;
@@ -12,9 +14,9 @@ let cache = null;
 function read() {
   try {
     const raw = localStorage.getItem(EKEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) { const p = JSON.parse(raw); if (!p.earned) p.earned = {}; return p; }
   } catch (e) {}
-  return { energy: MAX_ENERGY, lastTs: now() };
+  return { energy: MAX_ENERGY, lastTs: now(), earned: {} };
 }
 function write() {
   try {
@@ -48,12 +50,32 @@ export const energy = () => refresh().energy;
 export function spend(n = 1) {
   refresh();
   if (cache.energy >= n) {
-    if (cache.energy === MAX_ENERGY) cache.lastTs = now(); // start the regen clock
+    if (cache.energy >= MAX_ENERGY) cache.lastTs = now(); // start the regen clock when dropping below full
     cache.energy -= n;
     write();
     return true;
   }
   return false;
+}
+
+// A lesson pays energy. First completion gives FIRST (bankable above MAX);
+// re-reading only tops you up to MAX. Returns { amount, first }.
+export function grantForLesson(key) {
+  refresh();
+  if (!cache.earned) cache.earned = {};
+  if (!cache.earned[key]) {
+    cache.earned[key] = true;
+    cache.energy += FIRST_ENERGY;
+    write();
+    return { amount: FIRST_ENERGY, first: true };
+  }
+  if (cache.energy < MAX_ENERGY) {
+    const add = Math.min(REVIEW_ENERGY, MAX_ENERGY - cache.energy);
+    cache.energy += add;
+    write();
+    return { amount: add, first: false };
+  }
+  return { amount: 0, first: false };
 }
 
 export function msToNext() {
@@ -74,10 +96,7 @@ export function fmtClock(ms) {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-// A compact "⚡ pips" label for the HUD.
+// A compact numeric label for the HUD (handles banked energy above MAX).
 export function energyPips() {
-  const e = energy();
-  let pips = "";
-  for (let i = 0; i < MAX_ENERGY; i++) pips += i < e ? "⚡" : "·";
-  return pips;
+  return `⚡ ${energy()}`;
 }
