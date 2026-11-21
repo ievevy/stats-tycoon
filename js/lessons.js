@@ -46,6 +46,8 @@ const dLog = (() => { const x = sampleNormal(40, 50, 15); const y = x.map((d) =>
 const FOUNDATIONS = [
   {
     title: "What a p-value really is",
+    video: { id: "vemZtEM63GY", title: "p-values: What they are and how to interpret them", by: "StatQuest" },
+    source: "American Statistical Association (2016) statement on p-values; Essentials of Statistics for Research.",
     body: `
       <p>A <strong>p-value</strong> is the probability of seeing a result at least this extreme <em>if there were truly no effect</em> (the "null"). Small p = your data would be surprising in a world where nothing is going on.</p>
       <p>Below, two groups are drawn from the <em>same</em> population — so there's <strong>no real effect</strong>. Run it a bunch and watch how often you still get a "significant" p &lt; 0.05 by pure luck.</p>`,
@@ -62,6 +64,8 @@ const FOUNDATIONS = [
   },
   {
     title: "Effect size — how big, not just whether",
+    video: { id: "yYsilqPsD8I", title: "Effect Sizes Explained: What the Numbers Really Mean", by: "Mind Facts" },
+    source: "Cohen (1988), Statistical Power Analysis — effect-size conventions; Essentials of Statistics for Research.",
     body: `
       <p>The p-value asks <em>"is it real?"</em>. The <strong>effect size</strong> asks <em>"does it matter?"</em> Drag the slider to see how <strong>Cohen's d</strong> separates two groups — roughly 0.2 small, 0.5 medium, 0.8 large.</p>`,
     demo: "effect",
@@ -77,6 +81,8 @@ const FOUNDATIONS = [
   },
   {
     title: "Significant vs important",
+    video: { id: "oGgsKmi_lyA", title: "Effect Size: statistical vs. practical significance", by: "Psy vs. Psy" },
+    source: "Greenland et al. (2016) on misinterpretations; Essentials of Statistics for Research.",
     art: artQuadrant(),
     body: `
       <p>Put the two ideas on a grid. The sweet spot is <strong>significant <em>and</em> a meaningful effect</strong> — top right. The link between effect size, sample size and detection is exactly the <strong>budget step</strong> you'll play.</p>`,
@@ -92,6 +98,8 @@ const FOUNDATIONS = [
   },
   {
     title: "Do your raters agree?",
+    video: { id: "aUxlxrPKyxY", title: "Cohen's Kappa: Measuring Agreement", by: "numiqo" },
+    source: "Cohen (1960); Landis & Koch (1977) benchmarks; McHugh (2012) on the kappa paradox.",
     body: `
       <p>When two or more people code or rate the same items, you must show they <strong>agree</strong> — and pick the <em>right coefficient</em> for the situation.</p>
       <table class="lesson-table">

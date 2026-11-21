@@ -418,6 +418,13 @@ button.ghost:active { transform: translateY(2px); border-bottom-width: 2px; }
 .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--line); }
 .dot.on { background: var(--cta); width: 22px; }
 
+/* Lesson video embed */
+.video { margin: 10px 0 14px; }
+.video-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #000; box-shadow: 0 6px 16px var(--shadow); }
+.video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.video-cap { display: inline-block; margin-top: 6px; font-size: 12.5px; font-weight: 700; color: var(--accent); text-decoration: none; }
+.source { font-size: 11.5px; color: var(--muted); font-style: italic; margin-top: 12px; }
+
 /* Interactive lesson blocks: quiz + demo */
 .quiz { background: var(--bg2); border-radius: 16px; padding: 14px; margin: 14px 0; box-shadow: inset 0 1px 3px var(--shadow); }
 .quiz-q { font-weight: 800; margin: 0 0 10px; font-size: 15px; }

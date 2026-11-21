@@ -341,6 +341,14 @@ function renderQuiz(quiz) {
     </div>`;
 }
 
+function renderVideo(v) {
+  return `
+    <div class="video">
+      <div class="video-frame"><iframe src="https://www.youtube-nocookie.com/embed/${v.id}" title="${v.title}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+      <a class="video-cap" href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener">▶ ${v.title} — ${v.by}</a>
+    </div>`;
+}
+
 function renderDemo(kind) {
   if (kind === "pvalue") {
     return `
@@ -442,10 +450,12 @@ function screenLesson() {
       <div class="rankbar"><span><span class="rank-icon">${lvl.icon}</span> ${lvl.rank}</span><span class="epill">${energyPips()}</span></div>
       <span class="tag">Lesson ${i + 1}/${lessons.length}</span>
       <h2>${lesson.title}</h2>
+      ${lesson.video ? renderVideo(lesson.video) : ""}
       ${lesson.art ? `<div class="chartbox lesson-box">${lesson.art}</div>` : ""}
       <div class="lesson-body">${lesson.body}</div>
       ${lesson.demo ? renderDemo(lesson.demo) : ""}
       ${lesson.quiz ? renderQuiz(lesson.quiz) : ""}
+      ${lesson.source ? `<p class="source">Source: ${lesson.source}</p>` : ""}
       <div class="dots">${dots}</div>
       <button class="primary" id="lessonNext" ${locked ? "disabled" : ""}>${nextLabel}</button>
       <button class="ghost" id="lessonBack">${i > 0 ? "← Previous" : "← Back"}</button>
