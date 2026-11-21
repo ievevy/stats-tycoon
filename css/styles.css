@@ -224,6 +224,8 @@ button.ghost:active { transform: translateY(2px); border-bottom-width: 2px; }
   box-shadow: 0 2px 0 var(--sink), 0 4px 10px var(--shadow);
 }
 .big-epill { font-size: 22px; margin: 10px auto; }
+.streak-row { display: flex; justify-content: center; gap: 8px; margin: 10px 0 2px; }
+.streak-row .epill { font-size: 14px; font-weight: 800; padding: 5px 13px; }
 .epill-label { font-size: 12px; letter-spacing: normal; color: var(--muted); font-weight: 700; }
 .timer { display: flex; justify-content: center; gap: 28px; margin: 16px 0; }
 .timer div { display: flex; flex-direction: column; gap: 2px; }
@@ -568,6 +570,7 @@ button.ghost:active { transform: translateY(2px); border-bottom-width: 2px; }
   pointer-events: none;
   animation: floatUp 1.4s ease-out forwards;
 }
+.energy-flash.freeze { background: #a8ddff; color: #0b3a5a; }
 @keyframes floatUp {
   0% { opacity: 0; transform: translate(-50%, 10px) scale(0.9); }
   20% { opacity: 1; transform: translate(-50%, 0) scale(1); }

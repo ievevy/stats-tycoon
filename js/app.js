@@ -16,6 +16,7 @@ import {
 } from "./collection.js";
 import { LESSONS } from "./lessons.js";
 import { SKILLS, pKnown, update as trackSkill, allSkills, masteredCount, totalSkills } from "./skills.js";
+import { touchStreak, recordActivity as recordStreakActivity, streakCount, freezeCount } from "./streak.js";
 
 // ---------- helpers ----------
 
@@ -164,8 +165,11 @@ let state;
 function boot() {
   progress = loadProgress();
   syncProgress(synthProgress()); // seed collection from existing progress + this month's seasonal items
+  const s = touchStreak();
   state = { step: "map", levelIndex: 0 };
   render();
+  if (s.usedFreeze) flashMsg("❄️ Streak freeze used", "freeze");
+  else if (s.changed && s.streak > 1) flashMsg(`🔥 ${s.streak}-day streak!`);
 }
 
 function startLevel(i) {
@@ -197,7 +201,7 @@ function hud() {
     ? Math.round(state.scores.reduce((a, b) => a + b, 0) / state.scores.length)
     : 0;
   return `
-    <div class="rankbar"><span><span class="rank-icon">${lvl.icon}</span> ${lvl.rank}</span><span class="epill">${energyPips()}</span></div>
+    <div class="rankbar"><span><span class="rank-icon">${lvl.icon}</span> ${lvl.rank}</span><span class="epill epill-energy">${energyPips()}</span></div>
     <div class="hud">
       <div class="stat"><span class="label">💰 Budget</span><span class="value">${state.budget}</span></div>
       <div class="stat"><span class="label">📊 Avg score</span><span class="value">${avg}</span></div>
@@ -223,44 +227,66 @@ function radioGroup(name, options, chosen) {
 function renderSite() {
   const ids = ["foundations", "intern", "ra", "phd", "pi"];
   const builtCount = ids.filter((id) => progress.passed[id]).length;
-  const baseY = 150;
+  const baseY = 158;
   const B = [
-    { id: "foundations", x: 12, w: 50, h: 40, c: "#8a94ff", r: "#5b67e0", s: "🧭" },
-    { id: "intern", x: 70, w: 56, h: 50, c: "#67c23a", r: "#4a9e26", s: "🧫" },
-    { id: "ra", x: 134, w: 60, h: 64, c: "#f4a62a", r: "#d4871a", s: "🔬" },
-    { id: "phd", x: 202, w: 54, h: 88, c: "#9b7cff", r: "#7658e0", s: "🎓" },
-    { id: "pi", x: 264, w: 80, h: 66, c: "#ff7aa2", r: "#e05b86", s: "🏆" },
+    { id: "foundations", x: 12, w: 50, h: 40, light: "#aeb6ff", base: "#8a94ff", roof: "#5b67e0", s: "🧭" },
+    { id: "intern", x: 70, w: 56, h: 52, light: "#8ad468", base: "#67c23a", roof: "#4a9e26", s: "🧫" },
+    { id: "ra", x: 134, w: 60, h: 66, light: "#ffc266", base: "#f4a62a", roof: "#d4871a", s: "🔬" },
+    { id: "phd", x: 202, w: 54, h: 92, light: "#b9a4ff", base: "#9b7cff", roof: "#7658e0", s: "🎓" },
+    { id: "pi", x: 262, w: 82, h: 68, light: "#ff9fbd", base: "#ff7aa2", roof: "#e05b86", s: "🏆" },
   ];
+  const win = (x, y, roof) => `<g><rect x="${x}" y="${y}" width="13" height="13" rx="2" fill="#fff6cf" stroke="${roof}" stroke-width="1"/><line x1="${x + 6.5}" y1="${y}" x2="${x + 6.5}" y2="${y + 13}" stroke="${roof}" stroke-width="0.8"/><line x1="${x}" y1="${y + 6.5}" x2="${x + 13}" y2="${y + 6.5}" stroke="${roof}" stroke-width="0.8"/></g>`;
   const bld = (b) => {
-    const y = baseY - b.h;
+    const y = baseY - b.h, cx = b.x + b.w / 2;
     if (!progress.passed[b.id]) {
-      return `<g opacity="0.5"><rect x="${b.x}" y="${y}" width="${b.w}" height="${b.h}" rx="5" fill="none" stroke="#9aa0b8" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${b.x + b.w / 2}" y="${y + b.h / 2 + 8}" text-anchor="middle" font-size="20">🚧</text></g>`;
+      return `<g opacity="0.5"><ellipse cx="${cx}" cy="${baseY + 2}" rx="${b.w * 0.5}" ry="4" fill="#000" opacity="0.1"/><rect x="${b.x}" y="${y}" width="${b.w}" height="${b.h}" rx="5" fill="none" stroke="#9aa0b8" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${cx}" y="${y + b.h / 2 + 8}" text-anchor="middle" font-size="20">🚧</text></g>`;
     }
+    const rows = b.h > 64 ? [y + 13, y + 36] : [y + 13];
+    const windows = rows.map((wy) => win(b.x + 8, wy, b.roof) + win(b.x + b.w - 21, wy, b.roof)).join("");
+    const flag = b.h > 80 ? `<line x1="${cx}" y1="${y - 18}" x2="${cx}" y2="${y - 30}" stroke="${b.roof}" stroke-width="1.5"/><polygon points="${cx},${y - 30} ${cx + 12},${y - 26} ${cx},${y - 22}" fill="#ff6b6b"/>` : "";
     return `<g>
-      <polygon points="${b.x - 3},${y} ${b.x + b.w / 2},${y - 16} ${b.x + b.w + 3},${y}" fill="${b.r}"/>
-      <rect x="${b.x}" y="${y}" width="${b.w}" height="${b.h}" rx="4" fill="${b.c}"/>
-      <rect x="${b.x + b.w / 2 - 7}" y="${baseY - 18}" width="14" height="18" rx="2" fill="${b.r}"/>
-      <rect x="${b.x + 8}" y="${y + 12}" width="11" height="11" rx="2" fill="#fff4c2"/>
-      <rect x="${b.x + b.w - 19}" y="${y + 12}" width="11" height="11" rx="2" fill="#fff4c2"/>
-      <text x="${b.x + b.w / 2}" y="${y - 21}" text-anchor="middle" font-size="16">${b.s}</text>
+      <ellipse cx="${cx}" cy="${baseY + 2}" rx="${b.w * 0.55}" ry="4.5" fill="#000" opacity="0.12"/>
+      <polygon points="${b.x - 4},${y} ${cx},${y - 18} ${b.x + b.w + 4},${y}" fill="${b.roof}"/>
+      <polygon points="${b.x - 4},${y} ${cx},${y - 18} ${cx},${y - 14} ${b.x},${y}" fill="#ffffff" opacity="0.18"/>
+      <rect x="${b.x}" y="${y}" width="${b.w}" height="${b.h}" rx="4" fill="url(#fac-${b.id})"/>
+      <rect x="${b.x}" y="${baseY - 7}" width="${b.w}" height="7" fill="${b.roof}" opacity="0.25"/>
+      ${windows}
+      <rect x="${cx - 8}" y="${baseY - 20}" width="16" height="20" rx="2" fill="${b.roof}"/>
+      <circle cx="${cx + 4}" cy="${baseY - 10}" r="1.5" fill="#ffd34d"/>
+      ${flag}
+      <text x="${cx}" y="${y - 23}" text-anchor="middle" font-size="16">${b.s}</text>
     </g>`;
   };
+  const tree = (x, s) => `<g transform="translate(${x},${baseY}) scale(${s})"><rect x="-3" y="-18" width="6" height="20" rx="2" fill="#9c6b3f"/><circle cx="0" cy="-26" r="13" fill="#5fae3a"/><circle cx="-10" cy="-20" r="10" fill="#6cc24a"/><circle cx="10" cy="-20" r="10" fill="#6cc24a"/><circle cx="0" cy="-30" r="9" fill="#7ed957"/></g>`;
+  const bush = (x) => `<g transform="translate(${x},${baseY})"><circle cx="-6" cy="-5" r="7" fill="#6cc24a"/><circle cx="6" cy="-5" r="7" fill="#5fae3a"/><circle cx="0" cy="-9" r="8" fill="#7ed957"/></g>`;
+  const gradDefs = B.map((b) => `<linearGradient id="fac-${b.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${b.light}"/><stop offset="1" stop-color="${b.base}"/></linearGradient>`).join("");
   const known = [...ITEMS, ...seasonalNow()];
-  const props = collection().unlocked.map((id) => { const it = known.find((x) => x.id === id); return it ? it.e : null; }).filter(Boolean).slice(0, 5);
-  const propXs = [28, 62, 298, 330, 150];
-  const propsSvg = props.map((e, i) => `<text x="${propXs[i]}" y="199" text-anchor="middle" font-size="15">${e}</text>`).join("");
+  const props = collection().unlocked.map((id) => { const it = known.find((x) => x.id === id); return it ? it.e : null; }).filter(Boolean).slice(0, 4);
+  const propXs = [34, 70, 300, 330];
+  const propsSvg = props.map((e, i) => `<text x="${propXs[i]}" y="206" text-anchor="middle" font-size="14">${e}</text>`).join("");
   return `
     <div class="site">
-      <svg viewBox="0 0 360 210" class="site-svg" role="img" aria-label="your research campus grows as you progress">
-        <circle cx="328" cy="30" r="15" fill="#ffd34d"/>
-        <ellipse cx="70" cy="34" rx="26" ry="10" fill="#ffffff" opacity="0.8"/>
-        <ellipse cx="150" cy="22" rx="20" ry="8" fill="#ffffff" opacity="0.7"/>
-        <rect x="0" y="150" width="360" height="60" fill="#93d268"/>
-        <rect x="0" y="150" width="360" height="4" fill="#7cc04f"/>
-        <rect x="0" y="180" width="360" height="18" fill="#ead9b0"/>
+      <svg viewBox="0 0 360 216" class="site-svg" role="img" aria-label="your research campus grows as you progress">
+        <defs>
+          ${gradDefs}
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe6ff"/><stop offset="1" stop-color="#e7f5ff"/></linearGradient>
+          <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9edb6e"/><stop offset="1" stop-color="#7fc94f"/></linearGradient>
+        </defs>
+        <rect x="0" y="0" width="360" height="158" fill="url(#sky)"/>
+        <circle cx="328" cy="28" r="16" fill="#ffe08a"/><circle cx="328" cy="28" r="11" fill="#ffd34d"/>
+        <ellipse cx="66" cy="32" rx="26" ry="10" fill="#fff" opacity="0.85"/><ellipse cx="88" cy="28" rx="16" ry="8" fill="#fff" opacity="0.85"/>
+        <ellipse cx="180" cy="20" rx="20" ry="8" fill="#fff" opacity="0.7"/>
+        <rect x="0" y="150" width="360" height="66" fill="url(#grass)"/>
+        <rect x="0" y="150" width="360" height="3" fill="#8fd05f"/>
+        ${tree(24, 1.05)}
+        <rect x="0" y="186" width="360" height="20" rx="2" fill="#e7d3a6"/>
+        <rect x="0" y="190" width="360" height="12" fill="#efe0bd"/>
+        ${bush(116)} ${bush(228)}
         ${B.map(bld).join("")}
+        ${tree(344, 0.85)}
         ${propsSvg}
-        <text x="180" y="196" text-anchor="middle" font-size="24">${avatarEmoji()}</text>
+        <ellipse cx="180" cy="208" rx="12" ry="3.5" fill="#000" opacity="0.12"/>
+        <text x="180" y="205" text-anchor="middle" font-size="26">${avatarEmoji()}</text>
       </svg>
       <div class="site-stat">🏗️ ${builtCount}/5 built · 🧠 ${masteredCount()}/${totalSkills()} skills mastered</div>
     </div>`;
@@ -298,7 +324,11 @@ function screenMap() {
     <section class="card center">
       <div class="mascot-stage">${mascot("happy", "bob")}</div>
       <h1>Your career</h1>
-      <div class="epill big-epill">${energyPips()} <span class="epill-label">lab energy</span></div>
+      <div class="streak-row">
+        <span class="epill">🔥 ${streakCount()} day${streakCount() === 1 ? "" : "s"}</span>
+        <span class="epill">❄️ ${freezeCount()} freeze${freezeCount() === 1 ? "" : "s"}</span>
+      </div>
+      <div class="epill big-epill epill-energy">${energyPips()} <span class="epill-label">lab energy</span></div>
       <button class="lab-btn" id="openLab">
         <span class="lab-av">${avatarEmoji()}</span>
         <span>My Lab</span>
@@ -447,7 +477,7 @@ function screenLesson() {
   const locked = lesson.quiz && state.answered[key] === undefined;
   return `
     <section class="card">
-      <div class="rankbar"><span><span class="rank-icon">${lvl.icon}</span> ${lvl.rank}</span><span class="epill">${energyPips()}</span></div>
+      <div class="rankbar"><span><span class="rank-icon">${lvl.icon}</span> ${lvl.rank}</span><span class="epill epill-energy">${energyPips()}</span></div>
       <span class="tag">Lesson ${i + 1}/${lessons.length}</span>
       <h2>${lesson.title}</h2>
       ${lesson.video ? renderVideo(lesson.video) : ""}
@@ -600,7 +630,8 @@ function grade() {
   state.scores.push(score);
   const unlocks = recordStudy(correctMethod, score);
   const mastery = trackSkill(sc.skill, correctMethod, { hinted: !!state.choice.hinted });
-  state.result = { sc, res, data, power, powered, correctMethod, correctClassify, sig, verdict, tone, score, grant, cost, n, unlocks, skill: sc.skill, mastery, hinted: !!state.choice.hinted };
+  const streakAct = recordStreakActivity();
+  state.result = { sc, res, data, power, powered, correctMethod, correctClassify, sig, verdict, tone, score, grant, cost, n, unlocks, skill: sc.skill, mastery, hinted: !!state.choice.hinted, freezeEarned: streakAct.earnedFreeze };
 }
 
 function screenDebrief() {
@@ -751,20 +782,24 @@ function screenLab() {
     </section>`;
 }
 
-// A brief floating "+N ⚡" toast for energy earned from a lesson.
-function flashEnergy(amount) {
-  if (!amount) return;
+// A brief floating toast (energy earned, streak, freeze…).
+function flashMsg(text, variant) {
   const el = document.createElement("div");
-  el.className = "energy-flash";
-  el.textContent = `+${amount} ⚡`;
+  el.className = "energy-flash" + (variant ? " " + variant : "");
+  el.textContent = text;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 1400);
+  setTimeout(() => el.remove(), 1500);
 }
+function flashEnergy(amount) { if (amount) flashMsg(`+${amount} ⚡`); }
 
 // Try to run the current study, spending one energy. Blocked → out-of-energy screen.
 function doRun() {
-  if (spend(1)) { grade(); state.step = "debrief"; render(); }
-  else { state.step = "energyout"; render(); }
+  if (spend(1)) {
+    grade();
+    state.step = "debrief";
+    render();
+    if (state.result.freezeEarned) flashMsg("❄️ +1 streak freeze", "freeze");
+  } else { state.step = "energyout"; render(); }
 }
 
 function screenEnergyOut() {
@@ -774,7 +809,7 @@ function screenEnergyOut() {
     <section class="card center">
       <div class="mascot-stage">${mascot(ready ? "happy" : "sleep", "bob")}</div>
       <h1>${ready ? "Energy restored!" : "Out of lab energy"}</h1>
-      <div class="epill big-epill">${energyPips()}</div>
+      <div class="epill big-epill epill-energy">${energyPips()}</div>
       ${ready
         ? `<p class="hint">Your lab has energy again. Pick up right where you left off.</p>
            <button class="primary" id="resume">Run the study →</button>
@@ -837,10 +872,12 @@ function wire() {
     };
     $("#lessonNext").onclick = () => {
       const got = grantForLesson(key); // lessons pay energy (first time banks, reviews top up)
+      const streakAct = recordStreakActivity();
       if (state.lessonIndex < lessons.length - 1) { state.lessonIndex++; render(); }
       else if (lvl.isFoundation) finishFoundation();
       else { state.choice = {}; state.studyIndex = 0; state.step = "brief"; render(); }
       flashEnergy(got.amount);
+      if (streakAct.earnedFreeze) flashMsg("❄️ +1 streak freeze", "freeze");
     };
     if (lesson.demo) wireDemo(lesson.demo, key);
     if (lesson.quiz) wireQuiz(lesson.quiz, key);
@@ -918,7 +955,7 @@ function wire() {
 
 function tick() {
   const e = energy(); // refreshes regen from the clock
-  document.querySelectorAll(".epill").forEach((el) => {
+  document.querySelectorAll(".epill-energy").forEach((el) => {
     // keep any trailing label span intact
     const label = el.querySelector(".epill-label");
     el.innerHTML = energyPips() + (label ? ' <span class="epill-label">lab energy</span>' : "");
