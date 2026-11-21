@@ -23,7 +23,7 @@ export const levels = [
     story:
       "Day one. The coffee is bad and the PI already handed you two datasets. Comparing two groups is where every researcher starts — get the t-test family right and you're on your way.",
     teaches: "Two-group comparisons: independent vs paired t-tests.",
-    scenarioIds: ["two-methods", "tutoring"],
+    scenarioIds: ["two-methods", "tutoring", "diet-two"],
   },
   {
     id: "ra",
@@ -33,7 +33,7 @@ export const levels = [
     story:
       "You've earned a badge and a desk. Now the questions have more moving parts — three groups at once, and relationships between numbers. Time for ANOVA and regression.",
     teaches: "More than two groups, and continuous predictors.",
-    scenarioIds: ["fertilizer", "study-hours"],
+    scenarioIds: ["fertilizer", "study-hours", "classes-anova"],
   },
   {
     id: "phd",
@@ -43,7 +43,7 @@ export const levels = [
     story:
       "Your thesis needs categorical outcomes — recoveries, yes/no events, risks. These don't fit a t-test at all. Master the chi-square and logistic regression and the committee will be impressed.",
     teaches: "Categorical and binary outcomes.",
-    scenarioIds: ["treatment", "dose"],
+    scenarioIds: ["treatment", "dose", "vaccine-chi"],
   },
   {
     id: "pi",

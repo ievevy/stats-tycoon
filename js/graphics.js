@@ -136,7 +136,7 @@ export function renderChart(data) {
   switch (data.kind) {
     case "paired": return pairedChart(data);
     case "two": return columns(data.groups, ["Group A", "Group B"], "Each dot is one observation");
-    case "multi": return columns(data.groups, ["A", "B", "C"], "Each dot is one plot");
+    case "multi": return columns(data.groups, data.groups.map((_, i) => String.fromCharCode(65 + i)), "Each dot is one plot");
     case "regression": {
       const fit = linearRegression(data.x, data.y);
       return scatterChart(data.x, data.y, "Each dot is one student", fit);

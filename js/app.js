@@ -334,11 +334,21 @@ function screenQBuilder() {
 // ----- full research-project pipeline -----
 const PIPE_STEPS = ["Question", "Hypotheses", "Power", "Method", "Run", "Conclusion"];
 const curProj = () => PROJECTS[state.pp.i];
-function startPipeline() {
-  const p = PROJECTS[0];
-  state.pp = { i: 0, stage: "build", placed: [], bank: shuffle([...p.tiles, ...p.distractors]), n: 30, method: null };
+function startPipeline(i = 0) {
+  const p = PROJECTS[i];
+  state.pp = { i, stage: "build", placed: [], bank: shuffle([...p.tiles, ...p.distractors]), n: 30, method: null };
   state.step = "pipeline";
   render();
+}
+function screenPipeList() {
+  return `
+    <section class="card">
+      <span class="tag">Full study</span>
+      <div class="brief-head">${mascot("happy", "sm")}<h2>Run a Full Study</h2></div>
+      <p class="hint">Take a research question all the way from idea to an honest conclusion. Pick a project:</p>
+      <div class="proj-list">${PROJECTS.map((p, i) => `<button class="proj-item" data-i="${i}"><span class="proj-title">${p.title}</span><span class="proj-sub">${METHOD_LABELS[p.method]}</span></button>`).join("")}</div>
+      <button class="ghost" id="plMap">← Career map</button>
+    </section>`;
 }
 function pipeStepper(active) {
   return `<div class="stepper">${PIPE_STEPS.map((s, i) => `<span class="pstep ${i === active ? "on" : i < active ? "done" : ""}">${i < active ? "✓" : i + 1}</span>`).join("")}</div>`;
@@ -991,7 +1001,7 @@ function render() {
     map: screenMap, story: screenStory, brief: screenBrief, classify: screenClassify,
     budget: screenBudget, method: screenMethod, debrief: screenDebrief, levelend: screenLevelEnd,
     energyout: screenEnergyOut, lab: screenLab, lesson: screenLesson, qbuilder: screenQBuilder,
-    pipeline: screenPipeline, helper: screenHelper,
+    pipeline: screenPipeline, helper: screenHelper, pipelist: screenPipeList,
   };
   app().innerHTML = screens[state.step]();
   wire();
@@ -1010,7 +1020,7 @@ function wire() {
     const qb = $("#openQB");
     if (qb) qb.onclick = () => startQBuilder();
     const pipe = $("#openPipe");
-    if (pipe) pipe.onclick = () => startPipeline();
+    if (pipe) pipe.onclick = () => { state.step = "pipelist"; render(); };
     const hlp = $("#openHelper");
     if (hlp) hlp.onclick = () => { if (!state.chat) state.chat = []; state.step = "helper"; render(); };
   }
@@ -1022,6 +1032,11 @@ function wire() {
     app().querySelectorAll(".chip-btn").forEach((b) => (b.onclick = () => askHelper(b.dataset.q)));
     $("#helperMap").onclick = () => { state.step = "map"; render(); };
     const c = app().querySelector(".chat"); if (c) c.scrollTop = c.scrollHeight;
+  }
+
+  if (step === "pipelist") {
+    app().querySelectorAll(".proj-item").forEach((b) => (b.onclick = () => startPipeline(+b.dataset.i)));
+    $("#plMap").onclick = () => { state.step = "map"; render(); };
   }
 
   if (step === "pipeline") {
