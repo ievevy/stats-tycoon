@@ -1,0 +1,733 @@
+// app.js — the game: a career ladder of levels, each a story chapter of studies.
+// Flow: Map → Story → (Brief → Classify → Budget → Run → Debrief)×studies → Level results.
+// Progress (unlocked ranks + stars) is saved to localStorage.
+
+import {
+  twoSampleT, pairedT, oneWayAnova, linearRegression, chiSquare,
+  logisticRegression, approxPower,
+} from "./stats.js";
+import { scenarios, METHOD_LABELS } from "./scenarios.js";
+import { renderChart, mascot, confetti } from "./graphics.js";
+import { levels, lockedRanks, scoreStudy, starsFor, PASS_MARK } from "./levels.js";
+import { energy, spend, msToNext, msToFull, fmtClock, energyPips, MAX_ENERGY } from "./energy.js";
+import {
+  AVATARS, ITEMS, seasonalNow, collection, setAvatar, avatarEmoji,
+  recordStudy, syncProgress, newCount, markSeen, totalItems,
+} from "./collection.js";
+import { LESSONS } from "./lessons.js";
+
+// ---------- helpers ----------
+
+const $ = (sel) => document.querySelector(sel);
+const app = () => $("#app");
+const fmtP = (p) => (p < 0.001 ? "< 0.001" : p.toFixed(3));
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const starRow = (n) => "★★★".slice(0, n) + "☆☆☆".slice(0, 3 - n);
+
+function shuffle(a) {
+  const b = [...a];
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
+}
+
+function structOf(c) {
+  if (c.groups === "predictor") return "predictor";
+  if (c.groups === "three_plus") return "multi";
+  return c.paired === "paired" ? "two_paired" : "two_ind";
+}
+
+const STRUCTURE_LABELS = {
+  two_ind: "Two independent groups",
+  two_paired: "Two paired measurements",
+  multi: "Three or more groups",
+  predictor: "A continuous predictor",
+};
+
+function levelScenarios(lvl) {
+  return lvl.scenarioIds === "ALL"
+    ? scenarios
+    : lvl.scenarioIds.map((id) => scenarios.find((s) => s.id === id));
+}
+
+// ---------- persistence ----------
+
+const SAVE_KEY = "statsTycoonProgress";
+
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      // migrate old {unlocked, stars} saves to a passed-set keyed by level id
+      if (!p.passed) {
+        p.passed = {};
+        for (const id of Object.keys(p.stars || {})) p.passed[id] = true;
+      }
+      if (!p.stars) p.stars = {};
+      return p;
+    }
+  } catch (e) {}
+  return { passed: {}, stars: {} };
+}
+function saveProgress() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(progress));
+  } catch (e) {}
+}
+
+// A level is unlocked if it's first, or the previous level has been passed.
+const isUnlockedLevel = (i) => i === 0 || !!progress.passed[levels[i - 1].id];
+// Career rank = how many non-foundation chapters have been passed.
+const careerRankReached = () =>
+  levels.filter((l) => !l.isFoundation && progress.passed[l.id]).length;
+// Shape the collection expects: { stars, unlocked: <rank number> }.
+const synthProgress = () => ({ stars: progress.stars, unlocked: careerRankReached() });
+
+// ---------- run a chosen method on the scenario's data ----------
+
+function runMethod(method, data) {
+  switch (method) {
+    case "paired_t": {
+      if (data.kind === "paired") {
+        const r = pairedT(data.after, data.before);
+        return { ran: true, p: r.p, summary: `paired t = ${r.t.toFixed(2)}, mean change = ${r.estimate.toFixed(1)}` };
+      }
+      if (data.kind === "two") {
+        const r = pairedT(data.groups[0], data.groups[1]);
+        return { ran: true, p: r.p, summary: `paired t = ${r.t.toFixed(2)} — but these groups are not actually paired` };
+      }
+      return { ran: false, note: "A paired t-test needs two measurements on the same units. This data has none." };
+    }
+    case "t_test": {
+      let a, b;
+      if (data.kind === "two" || data.kind === "multi") { a = data.groups[0]; b = data.groups[1]; }
+      else if (data.kind === "paired") { a = data.after; b = data.before; }
+      else return { ran: false, note: "A t-test needs a continuous outcome in two groups." };
+      const r = twoSampleT(a, b);
+      return { ran: true, p: r.p, summary: `t = ${r.t.toFixed(2)}, df = ${r.df.toFixed(1)}, difference = ${r.estimate.toFixed(1)}` };
+    }
+    case "anova": {
+      let groups;
+      if (data.kind === "multi" || data.kind === "two") groups = data.groups;
+      else if (data.kind === "paired") groups = [data.before, data.after];
+      else return { ran: false, note: "ANOVA needs a continuous outcome split into groups." };
+      const r = oneWayAnova(groups);
+      return { ran: true, p: r.p, summary: `F = ${r.F.toFixed(2)}, df = (${r.dfb}, ${r.dfw})` };
+    }
+    case "linear": {
+      let x, y;
+      if (data.kind === "regression") { x = data.x; y = data.y; }
+      else if (data.kind === "logistic") { x = data.x; y = data.y; }
+      else return { ran: false, note: "Linear regression needs a continuous predictor and continuous outcome." };
+      const r = linearRegression(x, y);
+      return { ran: true, p: r.p, summary: `slope = ${r.slope.toFixed(2)}, r = ${r.r.toFixed(2)}` };
+    }
+    case "chi_square": {
+      if (data.kind === "association") {
+        const r = chiSquare(data.table);
+        return { ran: true, p: r.p, summary: `chi² = ${r.chi2.toFixed(2)}, df = ${r.df}` };
+      }
+      if (data.kind === "logistic") {
+        const sorted = [...data.x].sort((p, q) => p - q);
+        const med = sorted[Math.floor(sorted.length / 2)];
+        const t = [[0, 0], [0, 0]];
+        data.x.forEach((xv, i) => {
+          const row = xv >= med ? 0 : 1;
+          const col = data.y[i] === 1 ? 0 : 1;
+          t[row][col]++;
+        });
+        const r = chiSquare(t);
+        return { ran: true, p: r.p, summary: `chi² on a median split = ${r.chi2.toFixed(2)} — throws away the dose scale` };
+      }
+      return { ran: false, note: "Chi-square needs categorical variables in a contingency table." };
+    }
+    case "logistic": {
+      if (data.kind === "logistic") {
+        const r = logisticRegression(data.x, data.y);
+        return { ran: true, p: r.p, summary: `log-odds slope = ${r.slope.toFixed(3)}` };
+      }
+      return { ran: false, note: "Logistic regression needs a binary outcome and a predictor." };
+    }
+  }
+  return { ran: false, note: "Unknown method." };
+}
+
+// ---------- game state ----------
+
+let progress;
+let state;
+
+function boot() {
+  progress = loadProgress();
+  syncProgress(synthProgress()); // seed collection from existing progress + this month's seasonal items
+  state = { step: "map", levelIndex: 0 };
+  render();
+}
+
+function startLevel(i) {
+  const lvl = levels[i];
+  state = {
+    step: "story",
+    levelIndex: i,
+    order: shuffle(levelScenarios(lvl)),
+    studyIndex: 0,
+    budget: 1000,
+    scores: [],
+    choice: {},
+    result: null,
+    promotion: null,
+  };
+  render();
+}
+
+const curLevel = () => levels[state.levelIndex];
+const current = () => state.order[state.studyIndex];
+
+// ---------- shared UI ----------
+
+function hud() {
+  const lvl = curLevel();
+  const avg = state.scores.length
+    ? Math.round(state.scores.reduce((a, b) => a + b, 0) / state.scores.length)
+    : 0;
+  return `
+    <div class="rankbar"><span><span class="rank-icon">${lvl.icon}</span> ${lvl.rank}</span><span class="epill">${energyPips()}</span></div>
+    <div class="hud">
+      <div class="stat"><span class="label">💰 Budget</span><span class="value">${state.budget}</span></div>
+      <div class="stat"><span class="label">📊 Avg score</span><span class="value">${avg}</span></div>
+      <div class="stat"><span class="label">🧪 Study</span><span class="value">${state.studyIndex + 1}/${state.order.length}</span></div>
+    </div>`;
+}
+
+function radioGroup(name, options, chosen) {
+  return options
+    .map(
+      (o) => `
+      <label class="opt ${chosen === o.v ? "sel" : ""}">
+        <input type="radio" name="${name}" value="${o.v}" ${chosen === o.v ? "checked" : ""}/>
+        <span>${o.t}</span>
+      </label>`
+    )
+    .join("");
+}
+
+// ---------- screens ----------
+
+function screenMap() {
+  const nodes = levels
+    .map((lvl, i) => {
+      const status = progress.passed[lvl.id] ? "done" : isUnlockedLevel(i) ? "current" : "locked";
+      const stars = progress.stars[lvl.id] || 0;
+      const starHtml = status === "done" && !lvl.isFoundation ? `<span class="node-stars">${starRow(stars)}</span>` : "";
+      const badge = status === "locked" ? "🔒" : status === "done" ? "✓" : lvl.isFoundation ? "📖" : "▶";
+      return `
+        <button class="node ${status}" data-i="${i}" ${status === "locked" ? "disabled" : ""}>
+          <span class="node-icon">${lvl.icon}</span>
+          <span class="node-text"><span class="node-chapter">${lvl.chapter}</span><span class="node-rank">${lvl.rank}</span>${starHtml}</span>
+          <span class="node-badge">${badge}</span>
+        </button>`;
+    })
+    .join('<div class="node-link"></div>');
+
+  const locked = lockedRanks
+    .map(
+      (r) => `
+      <div class="node locked soon">
+        <span class="node-icon">${r.icon}</span>
+        <span class="node-text"><span class="node-rank">${r.rank}</span><span class="node-note">${r.note}</span></span>
+        <span class="node-badge">🔒</span>
+      </div>`
+    )
+    .join('<div class="node-link"></div>');
+
+  return `
+    <section class="card center">
+      <div class="mascot-stage">${mascot("happy", "bob")}</div>
+      <h1>Your career</h1>
+      <div class="epill big-epill">${energyPips()} <span class="epill-label">lab energy</span></div>
+      <button class="lab-btn" id="openLab">
+        <span class="lab-av">${avatarEmoji()}</span>
+        <span>My Lab</span>
+        <span class="lab-count">${collection().unlocked.filter((id) => ITEMS.some((i) => i.id === id)).length}/${totalItems()}</span>
+        ${newCount() ? '<span class="new-badge">NEW</span>' : ""}
+      </button>
+      <p class="hint">Climb the research ladder. Pass a rank to unlock the next. Tap a glowing rank to play it. Each study you run costs ⚡1.</p>
+    </section>
+    <div class="map">
+      ${nodes}
+      <div class="node-link"></div>
+      ${locked}
+    </div>`;
+}
+
+function screenStory() {
+  const lvl = curLevel();
+  return `
+    <section class="card">
+      <div class="rankbar"><span class="rank-icon">${lvl.icon}</span><span>${lvl.rank}</span></div>
+      <span class="tag">${lvl.chapter}</span>
+      <div class="brief-head">${mascot("think", "sm")}<h2>${lvl.rank}</h2></div>
+      <p class="story">${lvl.story}</p>
+      <p class="datanote"><strong>This chapter:</strong> ${lvl.teaches}</p>
+      <button class="primary" id="begin">${lvl.isFoundation ? "Start the lessons →" : `Begin — ${state.order.length} studies →`}</button>
+      <button class="ghost" id="backMap">← Career map</button>
+    </section>`;
+}
+
+function screenLesson() {
+  const lvl = curLevel();
+  const lessons = LESSONS[lvl.id] || [];
+  const i = state.lessonIndex;
+  const lesson = lessons[i] || { title: "", body: "" };
+  const dots = lessons.map((_, k) => `<span class="dot ${k === i ? "on" : ""}"></span>`).join("");
+  const last = i === lessons.length - 1;
+  const nextLabel = last
+    ? (lvl.isFoundation ? "Finish orientation →" : "Start the studies →")
+    : "Next →";
+  return `
+    <section class="card">
+      <div class="rankbar"><span><span class="rank-icon">${lvl.icon}</span> ${lvl.rank}</span><span class="epill">${energyPips()}</span></div>
+      <span class="tag">Lesson ${i + 1}/${lessons.length}</span>
+      <h2>${lesson.title}</h2>
+      ${lesson.art ? `<div class="chartbox lesson-box">${lesson.art}</div>` : ""}
+      <div class="lesson-body">${lesson.body}</div>
+      <div class="dots">${dots}</div>
+      <button class="primary" id="lessonNext">${nextLabel}</button>
+      <button class="ghost" id="lessonBack">${i > 0 ? "← Previous" : "← Back"}</button>
+    </section>`;
+}
+
+function finishFoundation() {
+  const lvl = curLevel();
+  const firstTime = !progress.passed[lvl.id];
+  progress.passed[lvl.id] = true;
+  saveProgress();
+  const unlocks = syncProgress(synthProgress());
+  const next = firstTime ? levels[state.levelIndex + 1] : null;
+  state.levelResult = { foundation: true, passed: true, promotion: next, unlocks, stars: 0, avg: null };
+  state.step = "levelend";
+  render();
+}
+
+function screenBrief() {
+  const sc = current();
+  return hud() + `
+    <section class="card">
+      <span class="tag">Brief</span>
+      <div class="brief-head">${mascot("think", "sm")}<h2>${sc.title}</h2></div>
+      <p class="prompt">${sc.prompt}</p>
+      <p class="datanote"><strong>Your data:</strong> ${sc.dataNote}</p>
+      <button class="primary" id="toClassify">Classify the problem →</button>
+    </section>`;
+}
+
+function screenClassify() {
+  const c = state.choice;
+  return hud() + `
+    <section class="card">
+      <span class="tag">Classify</span>
+      <h2>What are you looking at?</h2>
+      <p class="qlabel">Outcome variable</p>
+      <div class="opts">${radioGroup("outcome", [
+        { v: "continuous", t: "Continuous (a number)" },
+        { v: "binary", t: "Binary (yes / no)" },
+        { v: "count", t: "Count (events)" },
+        { v: "categorical", t: "Categorical, 3+ classes" },
+      ], c.outcome)}</div>
+      <p class="qlabel">Structure of the comparison</p>
+      <div class="opts">${radioGroup("structure", [
+        { v: "two_ind", t: STRUCTURE_LABELS.two_ind },
+        { v: "two_paired", t: STRUCTURE_LABELS.two_paired },
+        { v: "multi", t: STRUCTURE_LABELS.multi },
+        { v: "predictor", t: STRUCTURE_LABELS.predictor },
+      ], c.structure)}</div>
+      <button class="primary" id="toBudget" ${c.outcome && c.structure ? "" : "disabled"}>Plan the sample →</button>
+    </section>`;
+}
+
+function screenBudget() {
+  const sc = current();
+  const n = state.choice.n || 30;
+  const power = approxPower(sc.effect, n, sc.powerModel);
+  const cost = n * 8;
+  const pct = Math.round(power * 100);
+  const powClass = power >= 0.8 ? "good" : power >= 0.5 ? "warn" : "bad";
+  return hud() + `
+    <section class="card">
+      <span class="tag">Budget</span>
+      <h2>How big a sample?</h2>
+      <p class="hint">Bigger samples cost more but make a real effect easier to detect. Aim for power ≥ 80%.</p>
+      <div class="slider-wrap">
+        <input type="range" id="nSlider" min="5" max="120" step="5" value="${n}"/>
+        <div class="slider-row"><span>Sample size (n)</span><span class="big" id="nVal">${n}</span></div>
+      </div>
+      <div class="meter">
+        <div class="meter-label"><span>Approx. power</span><span class="${powClass}" id="powVal">${pct}%</span></div>
+        <div class="bar"><div class="fill ${powClass}" id="powBar" style="width:${pct}%"></div></div>
+      </div>
+      <p class="cost">Cost of this study: <strong id="costVal">${cost}</strong> credits</p>
+      <button class="primary" id="toMethod">Choose a method →</button>
+    </section>`;
+}
+
+function screenMethod() {
+  const methods = Object.keys(METHOD_LABELS);
+  const chosen = state.choice.method;
+  return hud() + `
+    <section class="card">
+      <span class="tag">Run</span>
+      <h2>Which method?</h2>
+      <p class="hint">Pick the one the decision tree points to for this design.</p>
+      <div class="methods">
+        ${methods.map((m) => `<button class="method ${chosen === m ? "sel" : ""}" data-m="${m}">${METHOD_LABELS[m]}</button>`).join("")}
+      </div>
+      <button class="primary" id="runStudy" ${chosen ? "" : "disabled"}>Run the study →</button>
+    </section>`;
+}
+
+function grade() {
+  const sc = current();
+  const n = state.choice.n || 30;
+  const data = sc.simulate(n);
+  const res = runMethod(state.choice.method, data);
+  const power = approxPower(sc.effect, n, sc.powerModel);
+  const powered = power >= 0.8;
+  const correctMethod = state.choice.method === sc.method;
+  const correctClassify =
+    state.choice.outcome === sc.classify.outcome &&
+    state.choice.structure === structOf(sc.classify);
+  const sig = res.ran && res.p < 0.05;
+  const score = scoreStudy({ correctMethod, correctClassify, sig, powered, effectReal: sc.effectReal });
+
+  let verdict, tone;
+  if (correctMethod) {
+    if (sig && sc.effectReal) { verdict = "Correct method, and you detected the real effect. A finding you can trust."; tone = "good"; }
+    else if (!sig && sc.effectReal) {
+      verdict = powered
+        ? "Right method, but unlucky — the effect is real and usually detectable at this sample size."
+        : "Right method, but UNDERPOWERED. The sample was too small, so a real effect slipped through.";
+      tone = "warn";
+    } else { verdict = "Correct method; no real effect to find, and you didn't invent one. Clean work."; tone = "good"; }
+  } else {
+    verdict = res.ran
+      ? "Wrong method for this design. It still prints a p-value — which is exactly the trap. The number is misleading."
+      : "Wrong method for this design — it doesn't even apply to this data.";
+    tone = "bad";
+  }
+
+  const cost = n * 8;
+  const grant = Math.round(score * 6);
+  state.budget = state.budget - cost + grant;
+  state.scores.push(score);
+  const unlocks = recordStudy(correctMethod, score);
+  state.result = { sc, res, data, power, powered, correctMethod, correctClassify, sig, verdict, tone, score, grant, cost, n, unlocks };
+}
+
+function screenDebrief() {
+  const r = state.result;
+  const sc = r.sc;
+  const resultLine = r.res.ran
+    ? `<p class="result">Result: <strong>${r.res.summary}</strong>, p = <strong>${fmtP(r.res.p)}</strong> ${r.sig ? "(significant)" : "(not significant)"}.</p>`
+    : `<p class="result bad-text">${r.res.note}</p>`;
+  const mood = r.tone === "good" ? "happy" : r.tone === "warn" ? "ok" : "sad";
+  return hud() + `
+    <section class="card debrief ${r.tone}">
+      <span class="tag">Debrief</span>
+      <div class="brief-head">${mascot(mood, "sm")}<h2>${sc.title}</h2></div>
+      <div class="chartbox">${renderChart(r.data)}</div>
+      <p class="line"><strong>You chose:</strong> ${METHOD_LABELS[state.choice.method]} ${r.correctMethod ? '<span class="chip good">right method</span>' : '<span class="chip bad">wrong method</span>'} ${r.correctClassify ? '<span class="chip good">classified right</span>' : '<span class="chip warn">misclassified</span>'}</p>
+      ${resultLine}
+      <p class="truth"><strong>The truth:</strong> ${sc.truthText}</p>
+      <p class="verdict">${r.verdict}</p>
+      <p class="teach">${sc.teach}</p>
+      <div class="scoreline">
+        <span>n=${r.n} · power ${Math.round(r.power * 100)}%</span>
+        <span class="study-score">+${r.score} score</span>
+      </div>
+      ${unlockBanner(r.unlocks)}
+      <button class="primary" id="next">${state.studyIndex + 1 < state.order.length ? "Next study →" : "Finish chapter →"}</button>
+    </section>`;
+}
+
+function finishLevel() {
+  const avg = Math.round(state.scores.reduce((a, b) => a + b, 0) / state.scores.length);
+  const stars = starsFor(avg);
+  const passed = avg >= PASS_MARK;
+  const lvl = curLevel();
+  let promotion = null;
+
+  if (passed) {
+    if ((progress.stars[lvl.id] || 0) < stars) progress.stars[lvl.id] = stars;
+    const firstTime = !progress.passed[lvl.id];
+    progress.passed[lvl.id] = true;
+    saveProgress();
+    if (firstTime) {
+      const next = levels[state.levelIndex + 1];
+      if (next) promotion = next;
+    }
+  }
+  const unlocks = syncProgress(synthProgress());
+  state.levelResult = { avg, stars, passed, promotion, unlocks };
+  state.step = "levelend";
+  render();
+}
+
+function screenLevelEnd() {
+  const { avg, stars, passed, promotion, foundation } = state.levelResult;
+  const lvl = curLevel();
+  const mood = passed ? "happy" : "sad";
+
+  if (foundation) {
+    return `
+      <section class="card center">
+        <div class="mascot-stage">${mascot("happy", "bob")}</div>
+        <span class="tag">Orientation</span>
+        <h1>Foundations complete!</h1>
+        <p class="hint">You've got the basics — p-values, effect size, and rater agreement. Now put them to work.</p>
+        ${unlockBanner(state.levelResult.unlocks)}
+        ${promotion ? `<div class="promo"><span class="promo-icon">${promotion.icon}</span><p>Unlocked <strong>${promotion.rank}</strong>!</p></div>` : ""}
+        <button class="primary" id="toMap">Career map →</button>
+      </section>`;
+  }
+
+  const headline = passed ? "Chapter passed!" : "Not quite yet";
+  let promoHtml = "";
+  if (promotion) {
+    promoHtml = `<div class="promo"><span class="promo-icon">${promotion.icon}</span><p>Promoted to <strong>${promotion.rank}</strong>!</p></div>`;
+  } else if (passed && state.levelIndex === levels.length - 1) {
+    promoHtml = `<div class="promo"><span class="promo-icon">🥇</span><p>You've topped the ladder — <strong>Principal Investigator</strong>. New ranks coming soon.</p></div>`;
+  }
+  const failHtml = passed ? "" : `<p class="hint">You need an average of ${PASS_MARK} to pass. Re-read the debriefs and try the chapter again.</p>`;
+  return `
+    <section class="card center">
+      <div class="mascot-stage">${mascot(mood, "bob")}</div>
+      <span class="tag">${lvl.chapter}</span>
+      <h1>${headline}</h1>
+      <div class="bigstars">${starRow(stars)}</div>
+      <p class="grade">Average score: ${avg}</p>
+      ${unlockBanner(state.levelResult.unlocks)}
+      ${promoHtml}
+      ${failHtml}
+      <button class="primary" id="toMap">Career map →</button>
+      ${passed ? "" : '<button class="ghost" id="retry">Retry chapter</button>'}
+    </section>`;
+}
+
+function unlockBanner(unlocks) {
+  if (!unlocks || !unlocks.length) return "";
+  const items = unlocks.map((u) => `<span class="unlock-item">${u.e} ${u.name}</span>`).join("");
+  return `<div class="unlock-toast">✨ New lab item${unlocks.length > 1 ? "s" : ""}! ${items}</div>`;
+}
+
+function screenLab() {
+  markSeen();
+  const c = collection();
+  const avatars = AVATARS.map(
+    (a) => `<button class="avatar-opt ${c.avatar === a.id ? "sel" : ""}" data-a="${a.id}"><span class="av-e">${a.e}</span><span class="av-n">${a.name}</span></button>`
+  ).join("");
+
+  const season = seasonalNow();
+  const known = [...ITEMS, ...season];
+  const shelf = c.unlocked
+    .map((id) => { const it = known.find((x) => x.id === id); return it ? `<span class="shelf-item" title="${it.name}">${it.e}</span>` : ""; })
+    .join("");
+
+  const grid = ITEMS.map((it) => {
+    const un = c.unlocked.includes(it.id);
+    return `<div class="slot ${un ? "un" : "lock"}"><span class="slot-e">${un ? it.e : "🔒"}</span><span class="slot-n">${un ? it.name : it.hint}</span></div>`;
+  }).join("");
+
+  const earned = c.unlocked.filter((id) => ITEMS.some((i) => i.id === id)).length;
+
+  const seasonHtml = season.length
+    ? `<p class="qlabel">Seasonal — this month</p>
+       <div class="collection">${season.map((it) => {
+          const un = c.unlocked.includes(it.id);
+          return `<div class="slot season ${un ? "un" : "lock"}"><span class="slot-e">${un ? it.e : "❓"}</span><span class="slot-n">${it.name}</span></div>`;
+        }).join("")}</div>`
+    : "";
+
+  return `
+    <section class="card">
+      <span class="tag">My Lab</span>
+      <div class="lab-scene">
+        <span class="lab-avatar">${avatarEmoji()}</span>
+        <div class="shelf">${shelf || '<span class="shelf-empty">Earn items by getting methods right →</span>'}</div>
+      </div>
+      <p class="qlabel">Choose your avatar</p>
+      <div class="avatars">${avatars}</div>
+      <p class="qlabel">Collection — ${earned}/${totalItems()}</p>
+      <div class="collection">${grid}</div>
+      ${seasonHtml}
+      <button class="ghost" id="labBack">← Career map</button>
+    </section>`;
+}
+
+// Try to run the current study, spending one energy. Blocked → out-of-energy screen.
+function doRun() {
+  if (spend(1)) { grade(); state.step = "debrief"; render(); }
+  else { state.step = "energyout"; render(); }
+}
+
+function screenEnergyOut() {
+  const e = energy();
+  const ready = e >= 1;
+  return `
+    <section class="card center">
+      <div class="mascot-stage">${mascot(ready ? "happy" : "sleep", "bob")}</div>
+      <h1>${ready ? "Energy restored!" : "Out of lab energy"}</h1>
+      <div class="epill big-epill">${energyPips()}</div>
+      ${ready
+        ? `<p class="hint">Your lab has energy again. Pick up right where you left off.</p>`
+        : `<p class="hint">The lab needs to recharge. Energy refills on its own — come back soon to keep climbing.</p>
+           <div class="timer">
+             <div><span class="timer-label">Next ⚡ in</span><span class="timer-val" id="energy-next">${fmtClock(msToNext())}</span></div>
+             <div><span class="timer-label">Full in</span><span class="timer-val" id="energy-full">${fmtClock(msToFull())}</span></div>
+           </div>`}
+      ${ready ? '<button class="primary" id="resume">Run the study →</button>' : ""}
+      <button class="ghost" id="eout-map">← Career map</button>
+    </section>`;
+}
+
+// ---------- render + events ----------
+
+function render() {
+  const screens = {
+    map: screenMap, story: screenStory, brief: screenBrief, classify: screenClassify,
+    budget: screenBudget, method: screenMethod, debrief: screenDebrief, levelend: screenLevelEnd,
+    energyout: screenEnergyOut, lab: screenLab, lesson: screenLesson,
+  };
+  app().innerHTML = screens[state.step]();
+  wire();
+  window.scrollTo(0, 0);
+}
+
+function wire() {
+  const step = state.step;
+
+  if (step === "map") {
+    app().querySelectorAll(".node[data-i]").forEach((btn) => {
+      btn.onclick = () => startLevel(+btn.dataset.i);
+    });
+    const lab = $("#openLab");
+    if (lab) lab.onclick = () => { state.step = "lab"; render(); };
+  }
+
+  if (step === "lab") {
+    app().querySelectorAll(".avatar-opt").forEach((btn) => {
+      btn.onclick = () => { setAvatar(btn.dataset.a); render(); };
+    });
+    $("#labBack").onclick = () => { state.step = "map"; render(); };
+  }
+
+  if (step === "story") {
+    $("#begin").onclick = () => { state.lessonIndex = 0; state.step = "lesson"; render(); };
+    $("#backMap").onclick = () => { state.step = "map"; render(); };
+  }
+
+  if (step === "lesson") {
+    const back = $("#lessonBack");
+    if (back) back.onclick = () => {
+      if (state.lessonIndex > 0) { state.lessonIndex--; render(); }
+      else { state.step = "story"; render(); }
+    };
+    $("#lessonNext").onclick = () => {
+      const lessons = LESSONS[curLevel().id] || [];
+      if (state.lessonIndex < lessons.length - 1) { state.lessonIndex++; render(); }
+      else if (curLevel().isFoundation) finishFoundation();
+      else { state.choice = {}; state.studyIndex = 0; state.step = "brief"; render(); }
+    };
+  }
+
+  if (step === "brief") $("#toClassify").onclick = () => { state.choice = {}; state.step = "classify"; render(); };
+
+  if (step === "classify") {
+    app().querySelectorAll('input[name="outcome"]').forEach((el) => {
+      el.onchange = () => { state.choice.outcome = el.value; render(); };
+    });
+    app().querySelectorAll('input[name="structure"]').forEach((el) => {
+      el.onchange = () => { state.choice.structure = el.value; render(); };
+    });
+    const b = $("#toBudget");
+    if (b) b.onclick = () => { state.choice.n = 30; state.step = "budget"; render(); };
+  }
+
+  if (step === "budget") {
+    const slider = $("#nSlider");
+    const sc = current();
+    slider.oninput = () => {
+      const n = +slider.value;
+      state.choice.n = n;
+      const power = approxPower(sc.effect, n, sc.powerModel);
+      const pct = Math.round(power * 100);
+      const cls = power >= 0.8 ? "good" : power >= 0.5 ? "warn" : "bad";
+      $("#nVal").textContent = n;
+      $("#costVal").textContent = n * 8;
+      const pv = $("#powVal"); pv.textContent = pct + "%"; pv.className = cls;
+      const pb = $("#powBar"); pb.style.width = pct + "%"; pb.className = "fill " + cls;
+    };
+    $("#toMethod").onclick = () => { state.step = "method"; render(); };
+  }
+
+  if (step === "method") {
+    app().querySelectorAll(".method").forEach((btn) => {
+      btn.onclick = () => { state.choice.method = btn.dataset.m; render(); };
+    });
+    const run = $("#runStudy");
+    if (run) run.onclick = () => doRun();
+  }
+
+  if (step === "energyout") {
+    const resume = $("#resume");
+    if (resume) resume.onclick = () => doRun();
+    $("#eout-map").onclick = () => { state.step = "map"; render(); };
+  }
+
+  if (step === "debrief") {
+    if (state.result && state.result.tone === "good") confetti();
+    $("#next").onclick = () => {
+      state.studyIndex++;
+      if (state.studyIndex >= state.order.length) finishLevel();
+      else { state.choice = {}; state.step = "brief"; render(); }
+    };
+  }
+
+  if (step === "levelend") {
+    if (state.levelResult.passed) confetti();
+    $("#toMap").onclick = () => { state.step = "map"; render(); };
+    const retry = $("#retry");
+    if (retry) retry.onclick = () => startLevel(state.levelIndex);
+  }
+}
+
+// ---------- live energy ticker ----------
+
+function tick() {
+  const e = energy(); // refreshes regen from the clock
+  document.querySelectorAll(".epill").forEach((el) => {
+    // keep any trailing label span intact
+    const label = el.querySelector(".epill-label");
+    el.innerHTML = energyPips() + (label ? ' <span class="epill-label">lab energy</span>' : "");
+  });
+  if (state.step === "energyout") {
+    const nx = $("#energy-next"), fu = $("#energy-full");
+    if (nx) nx.textContent = fmtClock(msToNext());
+    if (fu) fu.textContent = fmtClock(msToFull());
+    // just regenerated the first point → reveal the resume button
+    if (e >= 1 && !$("#resume")) render();
+  }
+}
+
+// ---------- boot ----------
+
+boot();
+setInterval(tick, 1000);
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
