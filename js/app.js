@@ -19,6 +19,7 @@ import { SKILLS, pKnown, update as trackSkill, allSkills, masteredCount, totalSk
 import { touchStreak, recordActivity as recordStreakActivity, streakCount, freezeCount } from "./streak.js";
 import { QUESTIONS } from "./questions.js";
 import { PROJECTS } from "./pipeline.js";
+import { SUGGESTIONS, answer as helperAnswer } from "./helper.js";
 
 // ---------- helpers ----------
 
@@ -423,6 +424,31 @@ function screenPipeline() {
     </section>`;
 }
 
+// ----- built-in Q&A assistant -----
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+function askHelper(q) {
+  if (!q || !q.trim()) return;
+  if (!state.chat) state.chat = [];
+  state.chat.push({ q: q.trim(), a: helperAnswer(q) });
+  render();
+}
+function screenHelper() {
+  const chat = state.chat || [];
+  const log = chat.length
+    ? chat.map((m) => `<div class="bubble q">${esc(m.q)}</div><div class="bubble a">${m.a}</div>`).join("")
+    : '<div class="bubble a">Hi! I\'m the Lab Assistant. Ask me about p-values, which test to use, power, effect size, causation… or tap a question below.</div>';
+  return `
+    <section class="card">
+      <span class="tag">Lab Assistant</span>
+      <div class="brief-head">${mascot("happy", "sm")}<h2>Ask me anything</h2></div>
+      <p class="hint">A built-in helper that answers from the lessons — works offline, no account needed.</p>
+      <div class="chat">${log}</div>
+      <div class="chips">${SUGGESTIONS.map((s) => `<button class="chip-btn" data-q="${s}">${s}</button>`).join("")}</div>
+      <div class="chat-input"><input type="text" id="chatIn" placeholder="Type your question…" autocomplete="off"/><button class="primary chat-send" id="chatSend">Ask</button></div>
+      <button class="ghost" id="helperMap">← Career map</button>
+    </section>`;
+}
+
 function screenMap() {
   const nodes = levels
     .map((lvl, i) => {
@@ -468,6 +494,7 @@ function screenMap() {
       </button>
       <button class="lab-btn" id="openQB">🧩 Build a Research Question</button>
       <button class="lab-btn" id="openPipe">🔬 Run a Full Study</button>
+      <button class="lab-btn" id="openHelper">💬 Ask the Lab Assistant</button>
       <p class="hint">Climb the research ladder. <strong>Lessons give you ⚡ energy; each study you run costs ⚡1.</strong> Tap a glowing rank to play it.</p>
     </section>
     <div class="map">
@@ -964,7 +991,7 @@ function render() {
     map: screenMap, story: screenStory, brief: screenBrief, classify: screenClassify,
     budget: screenBudget, method: screenMethod, debrief: screenDebrief, levelend: screenLevelEnd,
     energyout: screenEnergyOut, lab: screenLab, lesson: screenLesson, qbuilder: screenQBuilder,
-    pipeline: screenPipeline,
+    pipeline: screenPipeline, helper: screenHelper,
   };
   app().innerHTML = screens[state.step]();
   wire();
@@ -984,6 +1011,17 @@ function wire() {
     if (qb) qb.onclick = () => startQBuilder();
     const pipe = $("#openPipe");
     if (pipe) pipe.onclick = () => startPipeline();
+    const hlp = $("#openHelper");
+    if (hlp) hlp.onclick = () => { if (!state.chat) state.chat = []; state.step = "helper"; render(); };
+  }
+
+  if (step === "helper") {
+    const send = () => { const inp = $("#chatIn"); if (inp) askHelper(inp.value); };
+    const sb = $("#chatSend"); if (sb) sb.onclick = send;
+    const inp = $("#chatIn"); if (inp) inp.onkeydown = (e) => { if (e.key === "Enter") send(); };
+    app().querySelectorAll(".chip-btn").forEach((b) => (b.onclick = () => askHelper(b.dataset.q)));
+    $("#helperMap").onclick = () => { state.step = "map"; render(); };
+    const c = app().querySelector(".chat"); if (c) c.scrollTop = c.scrollHeight;
   }
 
   if (step === "pipeline") {
