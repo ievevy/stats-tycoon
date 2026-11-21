@@ -500,6 +500,39 @@ button.ghost:active { transform: translateY(2px); border-bottom-width: 2px; }
 .skill-top .fb-good { color: var(--good); }
 .skills .bar { height: 10px; }
 
+/* Research-question word-builder */
+.qb-answer {
+  min-height: 56px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: flex-start;
+  padding: 12px;
+  margin: 14px 0;
+  background: var(--bg2);
+  border-radius: 14px;
+  border-bottom: 3px solid var(--line);
+}
+.qb-empty { color: var(--muted); font-size: 14px; align-self: center; }
+.qb-bank { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.qtile {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  border-bottom-width: 3px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.qtile:active { transform: translateY(2px); border-bottom-width: 2px; }
+.qtile.placed { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.qb-result { background: var(--bg2); border-radius: 14px; padding: 14px; margin: 12px 0; font-size: 14px; line-height: 1.55; }
+.qb-result p { margin: 8px 0; }
+.qb-ok { font-size: 15px; }
+.qb-next { color: var(--muted); border-left: 3px solid var(--good); padding-left: 10px; }
+
 /* Story */
 .story { font-size: 16px; line-height: 1.6; }
 

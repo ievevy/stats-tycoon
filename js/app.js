@@ -17,6 +17,7 @@ import {
 import { LESSONS } from "./lessons.js";
 import { SKILLS, pKnown, update as trackSkill, allSkills, masteredCount, totalSkills } from "./skills.js";
 import { touchStreak, recordActivity as recordStreakActivity, streakCount, freezeCount } from "./streak.js";
+import { QUESTIONS } from "./questions.js";
 
 // ---------- helpers ----------
 
@@ -292,6 +293,42 @@ function renderSite() {
     </div>`;
 }
 
+// ----- research-question word-builder -----
+const arrEq = (a, b) => a.length === b.length && a.every((x, k) => x === b[k]);
+function loadQuestion(i) {
+  const q = QUESTIONS[i];
+  state.qb = { i, placed: [], bank: shuffle([...q.tiles, ...(q.distractors || [])]), done: false };
+}
+function startQBuilder() { loadQuestion(0); state.step = "qbuilder"; render(); }
+
+function renderQbResult(q) {
+  const last = state.qb.i + 1 >= QUESTIONS.length;
+  return `
+    <div class="qb-result">
+      <p class="qb-ok"><span class="fb-good">✓ Well-formed question!</span></p>
+      <p><strong>Hypotheses</strong><br>H₀: ${q.h0}<br>H₁: ${q.h1}</p>
+      <p><strong>Design:</strong> ${q.designLabel} · <strong>outcome:</strong> ${q.outcome}</p>
+      <p><strong>Points to:</strong> ${METHOD_LABELS[q.method]}</p>
+      <p class="qb-next">${q.explain}</p>
+    </div>
+    <button class="primary" id="qbNext">${last ? "Done →" : "Next question →"}</button>`;
+}
+
+function screenQBuilder() {
+  const q = QUESTIONS[state.qb.i];
+  const { placed, bank, done } = state.qb;
+  return `
+    <section class="card">
+      <span class="tag">Build a question ${state.qb.i + 1}/${QUESTIONS.length}</span>
+      <div class="brief-head">${mascot(done ? "happy" : "think", "sm")}<h2>Research Question</h2></div>
+      <p class="prompt">🎯 ${q.goal}</p>
+      <div class="qb-answer">${placed.length ? placed.map((t, k) => `<button class="qtile placed" data-i="${k}">${t}</button>`).join("") : '<span class="qb-empty">tap the words below to build your question…</span>'}</div>
+      <div class="qb-bank">${bank.map((t, k) => `<button class="qtile" data-b="${k}">${t}</button>`).join("")}</div>
+      ${done ? renderQbResult(q) : `<button class="primary" id="qbCheck" ${placed.length ? "" : "disabled"}>Check →</button>`}
+      <button class="ghost" id="qbMap">← Career map</button>
+    </section>`;
+}
+
 function screenMap() {
   const nodes = levels
     .map((lvl, i) => {
@@ -335,6 +372,7 @@ function screenMap() {
         <span class="lab-count">${collection().unlocked.filter((id) => ITEMS.some((i) => i.id === id)).length}/${totalItems()}</span>
         ${newCount() ? '<span class="new-badge">NEW</span>' : ""}
       </button>
+      <button class="lab-btn" id="openQB">🧩 Build a Research Question</button>
       <p class="hint">Climb the research ladder. <strong>Lessons give you ⚡ energy; each study you run costs ⚡1.</strong> Tap a glowing rank to play it.</p>
     </section>
     <div class="map">
@@ -830,7 +868,7 @@ function render() {
   const screens = {
     map: screenMap, story: screenStory, brief: screenBrief, classify: screenClassify,
     budget: screenBudget, method: screenMethod, debrief: screenDebrief, levelend: screenLevelEnd,
-    energyout: screenEnergyOut, lab: screenLab, lesson: screenLesson,
+    energyout: screenEnergyOut, lab: screenLab, lesson: screenLesson, qbuilder: screenQBuilder,
   };
   app().innerHTML = screens[state.step]();
   wire();
@@ -846,6 +884,33 @@ function wire() {
     });
     const lab = $("#openLab");
     if (lab) lab.onclick = () => { state.step = "lab"; render(); };
+    const qb = $("#openQB");
+    if (qb) qb.onclick = () => startQBuilder();
+  }
+
+  if (step === "qbuilder") {
+    app().querySelectorAll(".qtile.placed").forEach((btn) => {
+      btn.onclick = () => { const k = +btn.dataset.i; state.qb.bank.push(state.qb.placed.splice(k, 1)[0]); render(); };
+    });
+    app().querySelectorAll(".qb-bank .qtile").forEach((btn) => {
+      btn.onclick = () => { const k = +btn.dataset.b; state.qb.placed.push(state.qb.bank.splice(k, 1)[0]); render(); };
+    });
+    const chk = $("#qbCheck");
+    if (chk) chk.onclick = () => {
+      const q = QUESTIONS[state.qb.i];
+      if (arrEq(state.qb.placed, q.tiles)) {
+        state.qb.done = true;
+        trackSkill(q.skill, true);
+        recordStreakActivity();
+        render();
+      } else { flashMsg("Not quite — reorder or swap words", "freeze"); }
+    };
+    const nx = $("#qbNext");
+    if (nx) nx.onclick = () => {
+      if (state.qb.i + 1 >= QUESTIONS.length) { state.step = "map"; render(); }
+      else { loadQuestion(state.qb.i + 1); render(); }
+    };
+    $("#qbMap").onclick = () => { state.step = "map"; render(); };
   }
 
   if (step === "lab") {
