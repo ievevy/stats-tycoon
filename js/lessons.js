@@ -1,32 +1,13 @@
-// lessons.js — teaching content shown before you apply it. A Foundations set
-// (p-value, effect size, significance-vs-importance, rater agreement) plus one
-// focused lesson per career chapter. Grounded in standard research-stats sources
-// (ASA 2016 on p-values; Cohen on effect size; the inter-rater reliability literature).
+// lessons.js — teaching content shown before you apply it. Each lesson can carry an
+// interactive "test the theory" DEMO and a concept-check QUIZ (you must answer to go
+// on). A Foundations set (p-value, effect size, significance-vs-importance, rater
+// agreement) plus one focused lesson per career chapter. Grounded in standard
+// research-stats sources (ASA 2016 on p-values; Cohen on effect size; the IRR literature).
 
 import { sampleNormal, bernoulli } from "./stats.js";
 import { renderChart } from "./graphics.js";
 
 // ---------- small schematic art (inline SVG, theme-aware) ----------
-
-const artPValue = () => `
-  <svg viewBox="0 0 280 150" class="lesson-art" role="img" aria-label="p-value is the tail area under the null">
-    <path d="M20 118 C70 118 95 30 140 30 C185 30 210 118 260 118" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
-    <path d="M198 60 C216 80 236 104 260 118 L198 118 Z" fill="var(--accent)" fill-opacity="0.32"/>
-    <line x1="198" y1="48" x2="198" y2="124" stroke="var(--muted)" stroke-dasharray="4 4"/>
-    <text x="140" y="140" text-anchor="middle" font-size="11" fill="var(--muted)">results assuming nothing is going on</text>
-    <text x="228" y="52" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent)">p</text>
-  </svg>`;
-
-const artEffect = () => `
-  <svg viewBox="0 0 280 150" class="lesson-art" role="img" aria-label="effect size is the gap between groups">
-    <path d="M14 120 C50 120 70 55 100 55 C130 55 150 120 186 120" fill="none" stroke="var(--muted)" stroke-width="2.5"/>
-    <path d="M94 120 C130 120 150 55 180 55 C210 55 230 120 266 120" fill="none" stroke="var(--good)" stroke-width="2.5"/>
-    <line x1="100" y1="44" x2="180" y2="44" stroke="var(--ink)" stroke-width="2"/>
-    <path d="M100 44 l7 -4 v8 z" fill="var(--ink)"/><path d="M180 44 l-7 -4 v8 z" fill="var(--ink)"/>
-    <text x="140" y="36" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ink)">effect size (d)</text>
-    <text x="70" y="140" text-anchor="middle" font-size="11" fill="var(--muted)">group A</text>
-    <text x="214" y="140" text-anchor="middle" font-size="11" fill="var(--good)">group B</text>
-  </svg>`;
 
 const artQuadrant = () => `
   <svg viewBox="0 0 280 170" class="lesson-art" role="img" aria-label="significance by effect-size quadrants">
@@ -65,49 +46,68 @@ const dLog = (() => { const x = sampleNormal(40, 50, 15); const y = x.map((d) =>
 const FOUNDATIONS = [
   {
     title: "What a p-value really is",
-    art: artPValue(),
     body: `
-      <p>A <strong>p-value</strong> is the probability of seeing a result at least this extreme <em>if there were truly no effect</em> (the "null"). A small p means your data would be surprising in a world where nothing is going on — so it's evidence against "nothing is going on."</p>
-      <p>Two traps the pros warn about (ASA, 2016):</p>
-      <ul>
-        <li>It is <strong>not</strong> the probability that your hypothesis is true.</li>
-        <li>It is <strong>not</strong> the size of the effect — a tiny p can go with a tiny effect.</li>
-      </ul>
-      <p>And 0.05 is a convention, not a law: p = 0.049 and p = 0.051 are almost the same evidence.</p>`,
+      <p>A <strong>p-value</strong> is the probability of seeing a result at least this extreme <em>if there were truly no effect</em> (the "null"). Small p = your data would be surprising in a world where nothing is going on.</p>
+      <p>Below, two groups are drawn from the <em>same</em> population — so there's <strong>no real effect</strong>. Run it a bunch and watch how often you still get a "significant" p &lt; 0.05 by pure luck.</p>`,
+    demo: "pvalue",
+    quiz: {
+      q: "A study reports p = 0.03. What does that mean?",
+      options: [
+        { t: "If there were no real effect, data this extreme would happen ~3% of the time", ok: true, why: "Exactly — it's computed assuming the null is true." },
+        { t: "There's a 3% chance the hypothesis is true", why: "Common trap — a p-value is not the probability a hypothesis is true (ASA 2016)." },
+        { t: "The effect is 3% in size", why: "p-values say nothing about the size of an effect." },
+      ],
+    },
   },
   {
     title: "Effect size — how big, not just whether",
-    art: artEffect(),
     body: `
-      <p>The p-value asks <em>"is it real?"</em>. The <strong>effect size</strong> asks <em>"does it matter?"</em> — the magnitude of the difference or relationship.</p>
-      <p>For a difference in means, <strong>Cohen's d</strong> is a common one: roughly <strong>0.2 small, 0.5 medium, 0.8 large</strong> (rules of thumb — context rules).</p>
-      <p>With a big enough sample, a trivial effect can be "significant." With a small sample, a big effect can miss significance. Always report both.</p>`,
+      <p>The p-value asks <em>"is it real?"</em>. The <strong>effect size</strong> asks <em>"does it matter?"</em> Drag the slider to see how <strong>Cohen's d</strong> separates two groups — roughly 0.2 small, 0.5 medium, 0.8 large.</p>`,
+    demo: "effect",
+    quiz: {
+      q: "A huge study finds p < 0.001 but Cohen's d = 0.04. Best read?",
+      options: [
+        { t: "A real but tiny effect — probably not worth acting on", ok: true, why: "A large sample makes even a trivial effect 'significant'. d = 0.04 is tiny." },
+        { t: "A large, important effect", why: "A small p does not mean a big effect — d = 0.04 is negligible." },
+        { t: "The analysis must be wrong", why: "Not at all — significant + tiny effect is common with big samples." },
+      ],
+    },
   },
   {
     title: "Significant vs important",
     art: artQuadrant(),
     body: `
-      <p>Put the two ideas on a grid. The sweet spot is <strong>significant <em>and</em> a meaningful effect</strong> — top right.</p>
-      <ul>
-        <li><strong>Significant + tiny effect</strong>: real but maybe not worth acting on.</li>
-        <li><strong>Not significant + big effect</strong>: often just <em>underpowered</em> — too small a sample.</li>
-      </ul>
-      <p>That link between effect size, sample size and detection is exactly the <strong>budget step</strong> you'll play later.</p>`,
+      <p>Put the two ideas on a grid. The sweet spot is <strong>significant <em>and</em> a meaningful effect</strong> — top right. The link between effect size, sample size and detection is exactly the <strong>budget step</strong> you'll play.</p>`,
+    quiz: {
+      q: "Your result is NOT significant, but the observed effect looks large. Most likely?",
+      options: [
+        { t: "Underpowered — the sample was too small", ok: true, why: "A big effect that misses significance usually means too few observations." },
+        { t: "There is definitely no effect", why: "Not significant ≠ no effect, especially with a small sample." },
+        { t: "You must have p-hacked", why: "p-hacking inflates false positives; it doesn't explain a missed large effect." },
+      ],
+    },
   },
   {
     title: "Do your raters agree?",
-    art: null,
     body: `
-      <p>When two or more people code or rate the same items, you must show they <strong>agree</strong> — and, true to this game, pick the <em>right coefficient</em> for the situation.</p>
+      <p>When two or more people code or rate the same items, you must show they <strong>agree</strong> — and pick the <em>right coefficient</em> for the situation.</p>
       <table class="lesson-table">
         <tr><th>Situation</th><th>Use</th></tr>
-        <tr><td>Quick gut check</td><td><strong>% agreement</strong> — but it ignores chance, so report it only alongside one below</td></tr>
+        <tr><td>Quick gut check</td><td><strong>% agreement</strong> — ignores chance; report only alongside one below</td></tr>
         <tr><td>2 raters, categories</td><td><strong>Cohen's κ</strong> (weighted κ for ordered categories)</td></tr>
         <tr><td>3+ raters, categories</td><td><strong>Fleiss' κ</strong></td></tr>
-        <tr><td>Any raters / data type, missing data</td><td><strong>Krippendorff's α</strong> (most flexible)</td></tr>
-        <tr><td>Continuous ratings</td><td><strong>ICC</strong> (consistency vs absolute agreement)</td></tr>
+        <tr><td>Any raters / data type, missing data</td><td><strong>Krippendorff's α</strong></td></tr>
+        <tr><td>Continuous ratings</td><td><strong>ICC</strong></td></tr>
       </table>
-      <p>Aim for κ &gt; 0.70. Watch the <strong>kappa paradox</strong>: when one category dominates, κ can look low even with high agreement — Gwet's AC1 is more robust there.</p>`,
+      <p>Aim for κ &gt; 0.70, and watch the <strong>kappa paradox</strong> when one category dominates.</p>`,
+    quiz: {
+      q: "Three reviewers each sort papers into categories. Which coefficient?",
+      options: [
+        { t: "Fleiss' κ", ok: true, why: "3+ raters on categories → Fleiss' κ." },
+        { t: "Cohen's κ", why: "Cohen's κ is for exactly two raters." },
+        { t: "ICC", why: "ICC is for continuous ratings, not categories." },
+      ],
+    },
   },
 ];
 
@@ -118,12 +118,15 @@ export const LESSONS = {
       title: "Your outcome type is the master key",
       art: renderChart(dTwo),
       body: `
-        <p>Before any test, name two things: the <strong>outcome type</strong> and the <strong>design</strong>. For a number (continuous) compared across <strong>two groups</strong>, you're in t-test territory.</p>
-        <ul>
-          <li><strong>Same units measured twice</strong> (before/after) → <strong>paired</strong> t-test.</li>
-          <li><strong>Different units in each group</strong> → <strong>independent</strong> t-test.</li>
-        </ul>
-        <p>The chart shows two groups of observations — each dot one measurement, the bar each group's mean.</p>`,
+        <p>Before any test, name the <strong>outcome type</strong> and the <strong>design</strong>. For a number (continuous) across <strong>two groups</strong>, you're in t-test territory: <strong>paired</strong> if the same units are measured twice, <strong>independent</strong> if the groups are different units.</p>`,
+      quiz: {
+        q: "You measure the SAME patients before and after a drug. Which test?",
+        options: [
+          { t: "Paired t-test", ok: true, why: "Same units measured twice → paired." },
+          { t: "Independent t-test", why: "That's for two different groups of units." },
+          { t: "Chi-square", why: "Chi-square is for categorical outcomes." },
+        ],
+      },
     },
   ],
   ra: [
@@ -131,12 +134,15 @@ export const LESSONS = {
       title: "More groups, and relationships",
       art: renderChart(dReg),
       body: `
-        <p>Two moves beyond the t-test:</p>
-        <ul>
-          <li><strong>Three or more groups</strong> → one-way <strong>ANOVA</strong>, not a pile of t-tests (which inflate false positives).</li>
-          <li><strong>A continuous predictor</strong> (not groups) → <strong>linear regression</strong>, which estimates the slope.</li>
-        </ul>
-        <p>Here, each dot is a case; the line is the fitted relationship between predictor and outcome.</p>`,
+        <p>Two moves beyond the t-test: <strong>three or more groups</strong> → one-way <strong>ANOVA</strong> (not a pile of t-tests), and <strong>a continuous predictor</strong> → <strong>linear regression</strong>, which estimates the slope.</p>`,
+      quiz: {
+        q: "You compare mean crop yield across 4 fertilizers. Which test?",
+        options: [
+          { t: "One-way ANOVA", ok: true, why: "3+ groups → ANOVA; separate t-tests would inflate false positives." },
+          { t: "Two-sample t-test", why: "A t-test compares only two groups." },
+          { t: "Chi-square", why: "Yield is continuous, not categorical." },
+        ],
+      },
     },
   ],
   phd: [
@@ -144,11 +150,15 @@ export const LESSONS = {
       title: "When the outcome is a category",
       art: renderChart(dLog),
       body: `
-        <p>Yes/no and category outcomes don't fit a t-test at all.</p>
-        <ul>
-          <li><strong>Association between two categories</strong> → <strong>chi-square</strong>.</li>
-          <li><strong>Predict a binary outcome from a predictor</strong> → <strong>logistic regression</strong>, which keeps predictions between 0 and 1 (the curve below).</li>
-        </ul>`,
+        <p>Yes/no and category outcomes don't fit a t-test. <strong>Association between two categories</strong> → <strong>chi-square</strong>. <strong>Predict a binary outcome from a predictor</strong> → <strong>logistic regression</strong> (keeps predictions between 0 and 1).</p>`,
+      quiz: {
+        q: "Predict whether a patient relapses (yes/no) from their age (a number). Which method?",
+        options: [
+          { t: "Logistic regression", ok: true, why: "Binary outcome + a predictor → logistic." },
+          { t: "Linear regression", why: "Linear can predict impossible probabilities below 0 or above 1." },
+          { t: "Chi-square", why: "Age is continuous; chi-square needs categories." },
+        ],
+      },
     },
   ],
   pi: [
@@ -156,12 +166,15 @@ export const LESSONS = {
       title: "The whole decision tree",
       art: artTree(),
       body: `
-        <p>One rule drives everything you've learned: <strong>outcome type + design → method.</strong></p>
-        <ul>
-          <li>Continuous → t-test (2 groups) · ANOVA (3+) · regression (continuous predictor)</li>
-          <li>Categorical → chi-square (association) · logistic (predict binary)</li>
-        </ul>
-        <p>No warm-up from here — read each study and pick from the whole tree.</p>`,
+        <p>One rule drives everything: <strong>outcome type + design → method.</strong> Continuous → t-test / ANOVA / regression. Categorical → chi-square / logistic. No warm-up from here.</p>`,
+      quiz: {
+        q: "Continuous outcome, predicted from one continuous predictor. Which method?",
+        options: [
+          { t: "Linear regression", ok: true, why: "Continuous outcome + continuous predictor → linear regression." },
+          { t: "One-way ANOVA", why: "ANOVA compares group means, not a continuous predictor." },
+          { t: "Logistic regression", why: "Logistic is for binary outcomes." },
+        ],
+      },
     },
   ],
 };

@@ -1,5 +1,5 @@
 // sw.js — a tiny offline cache so the game works after "Add to Home Screen".
-const CACHE = "stats-tycoon-v6";
+const CACHE = "stats-tycoon-v8";
 const ASSETS = [
   "./",
   "./index.html",
@@ -33,8 +33,9 @@ self.addEventListener("activate", (e) => {
 // Network-first: fresh when online (so updates apply on reload), cache when offline.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  // revalidate with the server (no-cache) so updates always apply; fall back to cache offline
   e.respondWith(
-    fetch(e.request).then((resp) => {
+    fetch(e.request, { cache: "no-cache" }).then((resp) => {
       const copy = resp.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
       return resp;

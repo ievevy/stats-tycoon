@@ -4,7 +4,7 @@
 
 import {
   twoSampleT, pairedT, oneWayAnova, linearRegression, chiSquare,
-  logisticRegression, approxPower,
+  logisticRegression, approxPower, sampleNormal, normCdf,
 } from "./stats.js";
 import { scenarios, METHOD_LABELS } from "./scenarios.js";
 import { renderChart, mascot, confetti } from "./graphics.js";
@@ -179,6 +179,8 @@ function startLevel(i) {
     choice: {},
     result: null,
     promotion: null,
+    answered: {},   // quiz answers, keyed by levelId:lessonIndex
+    demoState: {},  // interactive-demo state, keyed the same way
   };
   render();
 }
@@ -277,6 +279,98 @@ function screenStory() {
     </section>`;
 }
 
+// ----- interactive lesson blocks -----
+
+function renderQuiz(quiz) {
+  return `
+    <div class="quiz">
+      <p class="quiz-q">🧠 ${quiz.q}</p>
+      <div class="quiz-opts">
+        ${quiz.options.map((o, idx) => `<button class="quiz-opt" data-idx="${idx}">${o.t}</button>`).join("")}
+      </div>
+      <div class="quiz-fb" id="quizfb"></div>
+    </div>`;
+}
+
+function renderDemo(kind) {
+  if (kind === "pvalue") {
+    return `
+      <div class="demo">
+        <div class="demo-title">🎲 Test the theory</div>
+        <button class="demo-btn" id="pvRun">Run an experiment (no real effect)</button>
+        <div class="demo-out" id="pvOut">Two groups drawn from the <em>same</em> population — any "difference" is pure chance.</div>
+        <div class="demo-tally" id="pvTally"></div>
+      </div>`;
+  }
+  if (kind === "effect") {
+    return `
+      <div class="demo">
+        <div class="demo-title">🔬 Drag to explore</div>
+        <div id="dArt"></div>
+        <input type="range" id="dSlide" min="0" max="120" value="50"/>
+        <div class="slider-row"><span>Effect size (Cohen's d)</span><span class="big" id="dVal">0.50</span></div>
+        <div class="demo-out" id="dLabel"></div>
+      </div>`;
+  }
+  return "";
+}
+
+function wireQuiz(quiz, key) {
+  const opts = [...app().querySelectorAll(".quiz-opt")];
+  const show = (idx) => {
+    opts.forEach((b, j) => {
+      b.disabled = true;
+      if (quiz.options[j].ok) b.classList.add("correct");
+      if (j === idx && !quiz.options[j].ok) b.classList.add("wrong");
+    });
+    const o = quiz.options[idx];
+    const fb = $("#quizfb");
+    if (fb) fb.innerHTML = `<span class="${o.ok ? "fb-good" : "fb-bad"}">${o.ok ? "✓ Correct" : "✗ Not quite"}</span> ${o.why}`;
+    const nx = $("#lessonNext");
+    if (nx) nx.disabled = false;
+  };
+  if (state.answered[key] !== undefined) show(state.answered[key]);
+  else opts.forEach((b) => (b.onclick = () => { const idx = +b.dataset.idx; state.answered[key] = idx; show(idx); }));
+}
+
+function wireDemo(kind, key) {
+  if (kind === "pvalue") {
+    const d = state.demoState[key] || (state.demoState[key] = { runs: 0, fp: 0 });
+    const tally = () => {
+      const el = $("#pvTally");
+      if (el) el.innerHTML = d.runs ? `Runs: <strong>${d.runs}</strong> · false alarms: <strong>${d.fp}</strong> (${Math.round((d.fp / d.runs) * 100)}%) — long-run, this hovers near 5%.` : "";
+    };
+    tally();
+    const btn = $("#pvRun");
+    if (btn) btn.onclick = () => {
+      const a = sampleNormal(25, 100, 15), b = sampleNormal(25, 100, 15);
+      const r = twoSampleT(a, b);
+      const sig = r.p < 0.05;
+      d.runs++; if (sig) d.fp++;
+      const out = $("#pvOut");
+      if (out) out.innerHTML = `p = <strong>${fmtP(r.p)}</strong> → ${sig ? '<span class="fb-bad">"significant"! but it\'s a FALSE ALARM — there is no real effect</span>' : '<span class="fb-good">not significant ✓</span>'}`;
+      tally();
+    };
+  }
+  if (kind === "effect") {
+    const st = state.demoState[key] || (state.demoState[key] = { d: 0.5 });
+    const bell = (cx, color) => `<path d="M${cx - 80} 108 C${cx - 40} 108 ${cx - 28} 24 ${cx} 24 C${cx + 28} 24 ${cx + 40} 108 ${cx + 80} 108" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+    const draw = () => {
+      const dv = st.d;
+      const sep = dv * 80;
+      const art = $("#dArt");
+      if (art) art.innerHTML = `<svg viewBox="0 0 280 120" class="lesson-art" role="img" aria-label="two curves separated by d">${bell(140 - sep / 2, "var(--muted)")}${bell(140 + sep / 2, "var(--cta)")}</svg>`;
+      const v = $("#dVal"); if (v) v.textContent = dv.toFixed(2);
+      const size = dv < 0.35 ? "small" : dv < 0.65 ? "medium" : "large";
+      const overlap = Math.round(2 * normCdf(-dv / 2) * 100);
+      const lab = $("#dLabel"); if (lab) lab.innerHTML = `A <strong>${size}</strong> effect — the groups overlap about <strong>${overlap}%</strong>.`;
+    };
+    const sl = $("#dSlide");
+    if (sl) { sl.value = Math.round(st.d * 100); sl.oninput = () => { st.d = (+sl.value) / 100; draw(); }; }
+    draw();
+  }
+}
+
 function screenLesson() {
   const lvl = curLevel();
   const lessons = LESSONS[lvl.id] || [];
@@ -287,6 +381,8 @@ function screenLesson() {
   const nextLabel = last
     ? (lvl.isFoundation ? "Finish orientation →" : "Start the studies →")
     : "Next →";
+  const key = lvl.id + ":" + i;
+  const locked = lesson.quiz && state.answered[key] === undefined;
   return `
     <section class="card">
       <div class="rankbar"><span><span class="rank-icon">${lvl.icon}</span> ${lvl.rank}</span><span class="epill">${energyPips()}</span></div>
@@ -294,8 +390,10 @@ function screenLesson() {
       <h2>${lesson.title}</h2>
       ${lesson.art ? `<div class="chartbox lesson-box">${lesson.art}</div>` : ""}
       <div class="lesson-body">${lesson.body}</div>
+      ${lesson.demo ? renderDemo(lesson.demo) : ""}
+      ${lesson.quiz ? renderQuiz(lesson.quiz) : ""}
       <div class="dots">${dots}</div>
-      <button class="primary" id="lessonNext">${nextLabel}</button>
+      <button class="primary" id="lessonNext" ${locked ? "disabled" : ""}>${nextLabel}</button>
       <button class="ghost" id="lessonBack">${i > 0 ? "← Previous" : "← Back"}</button>
     </section>`;
 }
@@ -629,17 +727,22 @@ function wire() {
   }
 
   if (step === "lesson") {
+    const lvl = curLevel();
+    const lessons = LESSONS[lvl.id] || [];
+    const lesson = lessons[state.lessonIndex] || {};
+    const key = lvl.id + ":" + state.lessonIndex;
     const back = $("#lessonBack");
     if (back) back.onclick = () => {
       if (state.lessonIndex > 0) { state.lessonIndex--; render(); }
       else { state.step = "story"; render(); }
     };
     $("#lessonNext").onclick = () => {
-      const lessons = LESSONS[curLevel().id] || [];
       if (state.lessonIndex < lessons.length - 1) { state.lessonIndex++; render(); }
-      else if (curLevel().isFoundation) finishFoundation();
+      else if (lvl.isFoundation) finishFoundation();
       else { state.choice = {}; state.studyIndex = 0; state.step = "brief"; render(); }
     };
+    if (lesson.demo) wireDemo(lesson.demo, key);
+    if (lesson.quiz) wireQuiz(lesson.quiz, key);
   }
 
   if (step === "brief") $("#toClassify").onclick = () => { state.choice = {}; state.step = "classify"; render(); };
